@@ -1,0 +1,66 @@
+# API Keys and secrets
+.env
+*.env
+api/keys.txt
+api/*.md
+
+# Output directories (large files)
+output/
+final-delivery/
+final_delivery/
+input/*.pdf
+input/split_pdfs/
+input/direct_pdfs/
+
+# Logs and progress
+logs/
+*.log
+progress.json
+progress.json.lock
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Local-only scripts with hardcoded paths
+scripts/final_status_check.py
+
+# Local directories
+PRD/
+设计细节/
+jeffsbustuck/
+local_test/
+ref/
+history/
+SESSION_MEMO.md
+benchmark_config.md
+
+# Temporary files
+api/keys.for,contentfiter and fix.txt
+monitor/
+reports/

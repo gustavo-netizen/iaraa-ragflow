@@ -1,0 +1,13 @@
+# DocMind API Keys
+# One key per line, lines starting with # are comments
+# Each key should be from a different Aliyun main account for max throughput
+# Get keys from: https://dashscope.console.aliyun.com/
+
+sk-your-api-key-1-here
+sk-your-api-key-2-here
+sk-your-api-key-3-here
+sk-your-api-key-4-here
+sk-your-api-key-5-here
+sk-your-api-key-6-here
+sk-your-api-key-7-here
+sk-your-api-key-8-here
