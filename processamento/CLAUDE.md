@@ -129,31 +129,6 @@ document, log = convert_book_with_llm(
 
 **Documentação completa:** `.claude/skills/convert-book/SKILL.md`
 
-### Post-Processing Scripts
-
-Scripts for cleaning processed books before RAGFlow ingestion:
-
-```bash
-# Remove SUMÁRIO/ÍNDICE sections from processed books
-python remove_sumario.py "/path/to/Livros_Processados/"
-
-# Remove REFERÊNCIAS/BIBLIOGRAFIA sections from processed books
-python remove_referencias.py "/path/to/Livros_Processados/"
-```
-
-**`remove_sumario.py`** - Removes table of contents/index sections:
-- Detects: `SUMÁRIO`, `ÍNDICE`, `## SUMÁRIO`, `## ÍNDICE`, `ÍNDICE ONOMÁSTICO`
-- Preserves: `SUMÁRIO EXECUTIVO` (legitimate content, not navigation)
-- Uses line-by-line processing to avoid regex backtracking
-
-**`remove_referencias.py`** - Removes bibliography/references sections:
-- Detects: `## Referências`, `## Bibliografia`, `## Referências bibliográficas`
-- Handles variants like `## Referências: Quer saber mais?`
-- Ignores TOC entries (lines ending with `...`)
-- Removes orphan `§` markers left after removal
-
-**Execution history:** See `PLANO_REMOVER_SUMARIO_REFERENCIAS.md` for detailed results.
-
 ## Architecture
 
 ### ficha_converter/ - Fichas Agroecológicas
@@ -247,22 +222,10 @@ Key implications:
 - Section markers (`§`) create one chunk per `##` section
 - Headers `###` (subsections) stay within parent `##` chunk
 
-### Reference Files
-
-- `naive.py`, `parser.py`, `chunker.txt` - RAGFlow source code for analysis
-- `PLANO_BOOK_CONVERTER.md` - Implementation plan for book_converter
-- `PLANO_TABLE_INJECTOR.md` - Implementation plan for table_injector (Fichas)
-- `PLANO_REMOVER_SUMARIO_REFERENCIAS.md` - Plan and results for post-processing scripts
-- `PLANO_SKILL_CONVERT_BOOK.md` - Implementation plan for /convert-book skill (LLM)
-- `book_conversion_analysis.json` - Analysis of book conversion challenges and requirements
-
 ### Directory Structure
 
 ```
 .
-├── converter.py          # DEPRECATED - use ficha_converter instead
-├── remove_sumario.py     # Post-processing: remove TOC/index sections
-├── remove_referencias.py # Post-processing: remove bibliography sections
 ├── ficha_converter/      # Package for Fichas Agroecológicas (v1.1.0)
 │   ├── __init__.py
 │   ├── __main__.py
