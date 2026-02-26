@@ -34,7 +34,7 @@ See `conversao/CLAUDE.md` for detailed commands and architecture.
 Two converters for two document types:
 
 - **`ficha_converter/`** — Regex-based 6-phase pipeline for Fichas Agroecológicas. Run with `python -m ficha_converter`.
-- **`book_converter/`** (at `.claude/skills/convert-book/`) — LLM-powered 6-phase pipeline for full books. Invoked via `/convert-book` skill.
+- **`book_converter/`** (at root `.claude/skills/convert-book/`) — LLM-powered 6-phase pipeline for full books. Invoked via `/convert-book` skill.
 
 See `processamento/CLAUDE.md` for detailed commands, pipeline phases, and LLM response format.
 

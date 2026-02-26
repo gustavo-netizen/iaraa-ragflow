@@ -192,9 +192,9 @@ Development history: See `PLANO_TABLE_INJECTOR.md` for implementation details.
 
 LLM-powered package for converting full books. Uses Claude for adaptive structure analysis instead of regex.
 
-**Module structure:**
+**Module structure** (at root `.claude/skills/convert-book/`):
 ```
-.claude/skills/convert-book/
+.claude/skills/convert-book/   # (root of project, not processamento/)
 ├── SKILL.md                 # Skill definition for /convert-book
 └── book_converter/          # Package for Livros Técnicos (v2.0.0)
     ├── __init__.py          # Public exports
@@ -234,19 +234,6 @@ Key implications:
 │   ├── frontmatter.py
 │   ├── restructure.py
 │   └── table_injector.py # Phase 4.5: Table injection from YAML
-├── .claude/
-│   └── skills/
-│       └── convert-book/        # Skill: /convert-book
-│           ├── SKILL.md         # Skill definition
-│           └── book_converter/  # Package for Livros Técnicos (v2.0.0)
-│               ├── __init__.py
-│               ├── models.py
-│               ├── ocr_cleanup.py       # + remove_figure_descriptions()
-│               ├── ragflow_optimize.py
-│               ├── assembler.py         # + get_output_filename()
-│               ├── llm_analyzer.py      # LLM: prompt + parsing
-│               ├── structure_applier.py # LLM: apply structure
-│               └── llm_pipeline.py      # LLM: pipeline + fallback headers
 ├── MD/
 │   ├── MD systemRAG/     # Input: OCR-generated Fichas (raw)
 │   ├── MD Maria/         # Reference: manually formatted Fichas

@@ -172,17 +172,18 @@ iaraa-ragflow/
 │   ├── requirements.txt
 │   └── ...
 ├── processamento/            # Etapa 2: Markdown → RAGFlow
-│   ├── ficha_converter/      # Fichas Agroecológicas (regex)
-│   │   ├── cli.py            # CLI + orquestração
-│   │   ├── config.py         # Padrões editáveis
-│   │   ├── cleanup.py        # Limpeza OCR + otimização
-│   │   ├── extraction.py     # Extração de metadados
-│   │   ├── frontmatter.py    # Geração YAML
-│   │   ├── restructure.py    # Reestruturação markdown
-│   │   └── table_injector.py # Injeção de tabelas
-│   └── .claude/skills/
-│       └── convert-book/     # Livros Técnicos (LLM)
-│           └── book_converter/
+│   └── ficha_converter/      # Fichas Agroecológicas (regex)
+│       ├── cli.py            # CLI + orquestração
+│       ├── config.py         # Padrões editáveis
+│       ├── cleanup.py        # Limpeza OCR + otimização
+│       ├── extraction.py     # Extração de metadados
+│       ├── frontmatter.py    # Geração YAML
+│       ├── restructure.py    # Reestruturação markdown
+│       └── table_injector.py # Injeção de tabelas
+├── .claude/skills/
+│   └── convert-book/         # Livros Técnicos (LLM) — skill do Claude Code
+│       ├── SKILL.md
+│       └── book_converter/
 └── CLAUDE.md
 ```
 
