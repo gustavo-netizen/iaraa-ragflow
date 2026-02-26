@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Stage 1 — `conversao/` (DocMind):** Converts raw PDFs to Markdown + YAML metadata using Alibaba's Qwen-VL API with concurrent OCR/VLM processing.
 
-**Stage 2 — `processamento/`:** Post-processes the OCR-generated Markdown to be RAGFlow-ready: cleans artifacts, extracts metadata, generates YAML frontmatter, restructures content, and inserts chunk delimiters (`§`).
+**Stage 2 — `processamento/`:** Post-processes the OCR-generated Markdown to be RAGFlow-ready: cleans artifacts, extracts metadata, generates YAML frontmatter, restructures content with `##`/`###` headers.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ PDF ──► conversao/ (DocMind)     ──► Raw Markdown + YAML
         Qwen-VL OCR + LLM            per-page extraction
 
     ──► processamento/           ──► RAGFlow-optimized Markdown
-        ficha_converter/              YAML frontmatter + § delimiters
+        ficha_converter/              YAML frontmatter + ##/### headers
         book_converter/ (skill)
 ```
 
@@ -33,14 +33,14 @@ See `conversao/CLAUDE.md` for detailed commands and architecture.
 
 Two converters for two document types:
 
-- **`ficha_converter/`** — Regex-based 7-phase pipeline for Fichas Agroecológicas. Run with `python -m ficha_converter`.
+- **`ficha_converter/`** — Regex-based 6-phase pipeline for Fichas Agroecológicas. Run with `python -m ficha_converter`.
 - **`book_converter/`** (at `.claude/skills/convert-book/`) — LLM-powered 6-phase pipeline for full books. Invoked via `/convert-book` skill.
 
 See `processamento/CLAUDE.md` for detailed commands, pipeline phases, and LLM response format.
 
 ### RAGFlow Integration
 
-Both converters produce Markdown with `§` markers before each `##` header. In RAGFlow, configure the delimiter as `` `§` `` (with backticks) for section-level chunking. The `join_paragraph_lines()` function merges OCR line breaks to prevent fragmented chunks.
+RAGFlow recognizes Markdown headers (`## `, `### `) natively as chunk delimiters — no custom markers needed. For books, configure the delimiter as `## ` in RAGFlow for chapter-level chunking. Fichas are small enough for RAGFlow's automatic token-based chunking. The `join_paragraph_lines()` function merges OCR line breaks to prevent fragmented chunks.
 
 ## Commands
 
@@ -72,6 +72,6 @@ python -m ficha_converter "MD/MD systemRAG/" -o "MD/converted/" --batch -v
 ## Key Patterns
 
 - **API keys** (conversao): Priority is `api/keys.txt` > `.env` > env vars. Python scripts only read env vars; `run.sh` converts `keys.txt` to env vars automatically.
-- **Output format**: Each document gets YAML frontmatter (`---` delimited) + Markdown body with `§` section markers and `##`/`###` headers.
+- **Output format**: Each document gets YAML frontmatter (`---` delimited) + Markdown body with `##`/`###` headers (recognized natively by RAGFlow as chunk delimiters).
 - **`join_paragraph_lines()`**: Joins lines starting with lowercase or `(`/`[` (OCR continuation). Preserves blank lines, headers, list items, and lines starting with uppercase.
 - **`config.py`** (processamento): Centralizes editable regex patterns (`CLEANUP_PATTERNS`, `SECTION_PATTERNS`, `TAG_KEYWORDS`) for the ficha_converter pipeline.

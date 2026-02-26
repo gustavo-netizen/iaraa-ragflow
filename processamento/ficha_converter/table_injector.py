@@ -234,7 +234,6 @@ def format_table_section(table: dict) -> str:
     """Converte dict do YAML em seção markdown otimizada para RAG.
 
     Formato de saída:
-    §
     ### [Título]
 
     [Descrição traduzida]
@@ -269,7 +268,6 @@ def format_table_section(table: dict) -> str:
 
     # Montar seção
     lines = [
-        "§",
         f"### {title}",
         "",
     ]

@@ -8,7 +8,7 @@ Uso:
     python -m ficha_converter input.md -o output.md [opções]
 
 Módulos:
-    cleanup: Limpeza de artefatos OCR e otimização RAGFlow (Fases 1, 5, 6)
+    cleanup: Limpeza de artefatos OCR e otimização RAGFlow (Fases 1, 5)
     extraction: Extração de metadados (Fase 2)
     frontmatter: Geração de YAML frontmatter (Fase 3)
     restructure: Reestruturação markdown (Fase 4)
@@ -16,14 +16,13 @@ Módulos:
 
 __version__ = "1.0.0"
 
-# Cleanup (Fases 1, 5, 6)
+# Cleanup (Fases 1, 5)
 from .cleanup import (
     remove_artifacts,
     clean_empty_lines,
     clean_all,
     join_paragraph_lines,
     normalize_punctuation,
-    insert_section_markers,
     optimize_for_ragflow,
 )
 
@@ -78,7 +77,6 @@ __all__ = [
     "clean_all",
     "join_paragraph_lines",
     "normalize_punctuation",
-    "insert_section_markers",
     "optimize_for_ragflow",
     # Extraction
     "extract_title",

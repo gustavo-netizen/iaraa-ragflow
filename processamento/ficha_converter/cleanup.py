@@ -1,10 +1,9 @@
 """
 Limpeza e otimização de texto para RAGFlow.
 
-Fases 1, 5 e 6 do pipeline:
+Fases 1 e 5 do pipeline:
 - Fase 1: Remoção de artefatos OCR
 - Fase 5: Junção de linhas de parágrafo
-- Fase 6: Inserção de marcadores de seção
 """
 
 import re
@@ -182,28 +181,6 @@ def normalize_punctuation(content: str) -> str:
 
 
 # =============================================================================
-# FASE 6: MARCADORES DE SEÇÃO
-# =============================================================================
-
-def insert_section_markers(content: str, marker: str = '§') -> str:
-    """
-    Insere marcador antes de headers ## para delimitar chunks no RAGFlow.
-
-    O RAGFlow usa o marcador como delimiter para criar chunks por seção.
-    Headers ### (subseções) NÃO recebem marcador - ficam no mesmo chunk da seção pai.
-
-    Args:
-        content: Conteúdo markdown
-        marker: Caractere marcador (padrão: §)
-
-    Returns:
-        Conteúdo com marcadores inseridos antes de cada ## header
-    """
-    # Inserir marcador em linha própria antes de cada ## (mas não ###)
-    return re.sub(r'^(## )', f'{marker}\n\\1', content, flags=re.MULTILINE)
-
-
-# =============================================================================
 # FUNÇÕES COMBINADAS
 # =============================================================================
 
@@ -220,11 +197,10 @@ def clean_all(content: str) -> str:
 
 def optimize_for_ragflow(content: str) -> str:
     """
-    Executa otimizações para RAGFlow (Fases 5-6).
+    Executa otimizações para RAGFlow (Fase 5).
 
     Returns:
-        Conteúdo otimizado com linhas unidas e marcadores de seção
+        Conteúdo otimizado com linhas de parágrafo unidas
     """
     content = join_paragraph_lines(content)
-    content = insert_section_markers(content)
     return content
