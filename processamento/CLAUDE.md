@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This project optimizes Markdown files from "systemRAG" (OCR-generated via Marco Converter) for ingestion into RAGFlow. There are two types of documents:
+This project optimizes Markdown files from "systemRAG" (OCR-generated via DocMind/Marco Converter) for ingestion into RAGFlow. There are two types of documents:
 
 1. **Fichas Agroecológicas** - Technical agricultural sheets from the Brazilian Ministry of Agriculture (use `ficha_converter/`)
-2. **Livros técnicos** - Full technical books in PDF converted to Markdown (use `book_converter/`)
+2. **Livros técnicos** - Full technical books in PDF converted to Markdown (use `/convert-book` skill)
 
 ## Key Commands
 
@@ -33,81 +33,13 @@ python -m ficha_converter "MD/MD systemRAG/" --test-extract
 python -m ficha_converter "MD/MD systemRAG/" --test-yaml
 ```
 
-### Livros Técnicos (book_converter/)
+### Livros Técnicos (/convert-book)
 
-```bash
-# Using wrapper script (recommended)
-python book_converter.py "Teste/Teste SystemRAG/AGROECOLOGIABASES_2019.md" -o "output.md" -v
-
-# Or with PYTHONPATH (module is in .claude/skills/convert-book/)
-PYTHONPATH=.claude/skills/convert-book python -m book_converter "Teste/Teste SystemRAG/AGROECOLOGIABASES_2019.md" -o "output.md" -v
-
-# Clean OCR artifacts only (Phase 1)
-python -m book_converter "input.md" -o "output.md" --clean-only -v
-
-# Extract and display TOC (Phase 2)
-python -m book_converter "input.md" --extract-only
-
-# Test metadata extraction (Phase 3)
-python -m book_converter "input.md" --test-metadata
-
-# Test chapter detection (Phase 4)
-python -m book_converter "input.md" --test-chapters
-
-# Test restructuring (Phase 5)
-python -m book_converter "input.md" --test-restructure -v
-
-# Test RAGFlow optimization (Phase 6)
-python -m book_converter "input.md" --test-optimize -v
-
-# Full pipeline with options
-python -m book_converter "input.md" -o "output.md" --chunk-level 3 -v
-python -m book_converter "input.md" -o "output.md" --no-frontmatter -v
-
-# Batch process directory
-python -m book_converter "input_dir/" -o "output_dir/" --batch -v
-```
-
-### Post-Processing Scripts
-
-Scripts for cleaning processed books before RAGFlow ingestion:
-
-```bash
-# Remove SUMÁRIO/ÍNDICE sections from processed books
-python remove_sumario.py "/path/to/Livros_Processados/"
-
-# Remove REFERÊNCIAS/BIBLIOGRAFIA sections from processed books
-python remove_referencias.py "/path/to/Livros_Processados/"
-```
-
-**`remove_sumario.py`** - Removes table of contents/index sections:
-- Detects: `SUMÁRIO`, `ÍNDICE`, `## SUMÁRIO`, `## ÍNDICE`, `ÍNDICE ONOMÁSTICO`
-- Preserves: `SUMÁRIO EXECUTIVO` (legitimate content, not navigation)
-- Uses line-by-line processing to avoid regex backtracking
-
-**`remove_referencias.py`** - Removes bibliography/references sections:
-- Detects: `## Referências`, `## Bibliografia`, `## Referências bibliográficas`
-- Handles variants like `## Referências: Quer saber mais?`
-- Ignores TOC entries (lines ending with `...`)
-- Removes orphan `§` markers left after removal
-
-**Execution history:** See `PLANO_REMOVER_SUMARIO_REFERENCIAS.md` for detailed results.
-
-### Skill: /convert-book (LLM-powered)
-
-Skill que usa LLM para análise adaptativa de estrutura de livros, substituindo a detecção baseada em regex do `book_converter` tradicional.
+Livros técnicos são processados exclusivamente via skill `/convert-book`, que usa análise LLM para extrair metadados, identificar capítulos e remover seções irrelevantes.
 
 ```
 /convert-book <input.md> [-o <output.md>] [-v]
 ```
-
-**Vantagens sobre book_converter (regex):**
-| Aspecto | book_converter | /convert-book |
-|---------|----------------|---------------|
-| Detecção de metadados | ~60% (regex) | ~95% (LLM) |
-| Detecção de capítulos | Depende de TOC | Independente |
-| Novos formatos | Requer código | Automático |
-| Manutenção | Alta | Baixa |
 
 **Pipeline (6 fases):**
 ```
@@ -139,9 +71,7 @@ Skill que usa LLM para análise adaptativa de estrutura de livros, substituindo 
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Correções Automáticas (v1.0.3):**
-
-O pipeline inclui correções que não requerem intervenção manual:
+**Correções Automáticas:**
 
 | Função | Descrição |
 |--------|-----------|
@@ -149,20 +79,13 @@ O pipeline inclui correções que não requerem intervenção manual:
 | `_fix_chapter_headers_fallback()` | Detecta CAPÍTULO/PARTE/APRESENTAÇÃO/PREFÁCIO e adiciona `##` |
 | `get_output_filename()` | Sugere nome de arquivo baseado no título extraído |
 
-**Módulos LLM (novos):**
-```
-.claude/skills/convert-book/book_converter/
-├── llm_analyzer.py      # Prompt LLM + parsing JSON
-├── structure_applier.py # Aplicar estrutura do LLM
-└── llm_pipeline.py      # Pipeline integrado
-```
-
 **Uso programático:**
 ```python
-from book_converter.llm_pipeline import convert_book_with_llm, get_analysis_prompt
+from book_converter.llm_pipeline import convert_book_with_llm
+from book_converter.llm_analyzer import build_analysis_prompt, parse_llm_response
 
 # 1. Gerar prompt para análise
-prompt = get_analysis_prompt(content, max_lines=500)
+prompt = build_analysis_prompt(content, max_lines=500)
 
 # 2. Obter resposta do LLM (JSON com metadados, capítulos, seções)
 llm_response = "..."  # JSON do LLM
@@ -205,6 +128,31 @@ document, log = convert_book_with_llm(
 - `referencias`: [[inicio, fim], ...] - Seções de referências (pode haver múltiplas)
 
 **Documentação completa:** `.claude/skills/convert-book/SKILL.md`
+
+### Post-Processing Scripts
+
+Scripts for cleaning processed books before RAGFlow ingestion:
+
+```bash
+# Remove SUMÁRIO/ÍNDICE sections from processed books
+python remove_sumario.py "/path/to/Livros_Processados/"
+
+# Remove REFERÊNCIAS/BIBLIOGRAFIA sections from processed books
+python remove_referencias.py "/path/to/Livros_Processados/"
+```
+
+**`remove_sumario.py`** - Removes table of contents/index sections:
+- Detects: `SUMÁRIO`, `ÍNDICE`, `## SUMÁRIO`, `## ÍNDICE`, `ÍNDICE ONOMÁSTICO`
+- Preserves: `SUMÁRIO EXECUTIVO` (legitimate content, not navigation)
+- Uses line-by-line processing to avoid regex backtracking
+
+**`remove_referencias.py`** - Removes bibliography/references sections:
+- Detects: `## Referências`, `## Bibliografia`, `## Referências bibliográficas`
+- Handles variants like `## Referências: Quer saber mais?`
+- Ignores TOC entries (lines ending with `...`)
+- Removes orphan `§` markers left after removal
+
+**Execution history:** See `PLANO_REMOVER_SUMARIO_REFERENCIAS.md` for detailed results.
 
 ## Architecture
 
@@ -268,65 +216,24 @@ Development history: See `PLANO_TABLE_INJECTOR.md` for implementation details.
 
 **Editable config:** `config.py` contains `CLEANUP_PATTERNS`, `TAG_KEYWORDS`, `SECTION_PATTERNS` for easy customization.
 
-### book_converter/ - Livros Técnicos
+### book_converter/ - Livros Técnicos (LLM pipeline)
 
-Modular Python package for converting full books. **Complete implementation** with 7-phase pipeline.
+LLM-powered package for converting full books. Uses Claude for adaptive structure analysis instead of regex.
 
 **Module structure:**
 ```
 .claude/skills/convert-book/
 ├── SKILL.md                 # Skill definition for /convert-book
-└── book_converter/          # Package for Livros Técnicos (v1.0.3)
+└── book_converter/          # Package for Livros Técnicos (v2.0.0)
     ├── __init__.py          # Public exports
-    ├── __main__.py          # Entry point
-    ├── cli.py               # Command-line interface
     ├── models.py            # Dataclasses (TocEntry, ChapterBoundary, BookMetadata)
-    ├── ocr_cleanup.py       # Phase 1: OCR artifact removal + figure descriptions
-    ├── toc_parser.py        # Phase 2: TOC extraction
-    ├── metadata.py          # Phase 3: Book metadata extraction
-    ├── chapter_detection.py # Phase 4: Chapter boundary detection
-    ├── restructure.py       # Phase 5: Markdown header insertion
-    ├── ragflow_optimize.py  # Phase 6: RAGFlow optimization
-    ├── assembler.py         # Phase 7: Final document assembly + get_output_filename()
-    ├── pipeline.py          # Full pipeline orchestration
-    │
-    │   # LLM-powered modules (for /convert-book skill)
+    ├── ocr_cleanup.py       # OCR artifact removal + figure descriptions
+    ├── ragflow_optimize.py  # RAGFlow optimization (join lines, bullets, §)
+    ├── assembler.py         # Final document assembly + get_output_filename()
     ├── llm_analyzer.py      # LLM prompt generation + JSON parsing
     ├── structure_applier.py # Apply LLM-identified structure
     └── llm_pipeline.py      # LLM pipeline + _fix_chapter_headers_fallback()
 ```
-
-**7-Phase Pipeline:**
-1. **Phase 1 - OCR Cleanup**: Removes Marco Converter metadata, `## Page X` markers, spaced headers
-2. **Phase 2 - TOC Extraction**: Parses table of contents, removes from body
-3. **Phase 3 - Metadata**: Extracts title, authors, ISBN, publisher, year from CIP block
-4. **Phase 4 - Chapter Detection**: Locates chapter boundaries using TOC entries
-5. **Phase 5 - Restructuring**: Inserts `#` for parts, `##` for chapters, converts ALL CAPS to Title Case
-6. **Phase 6 - RAGFlow Optimization**: Joins paragraph lines, standardizes bullets, inserts `§` markers
-7. **Phase 7 - Assembly**: Generates YAML frontmatter, assembles final document
-
-**Key CLI flags:**
-- `--chunk-level {1,2,3}` - Chunking granularity (1=parts, 2=chapters, 3=sections)
-- `--no-frontmatter` - Skip YAML frontmatter generation
-- `--keep-toc` - Keep table of contents in output (not recommended)
-
-**Development history:** See `PLANO_BOOK_CONVERTER.md` for completed 7-sprint roadmap.
-
-**Bugfixes (v1.0.1):** See `PLANO_BUGFIX_BOOK_CONVERTER.md` for details on 4 critical fixes:
-1. Content loss fix in `metadata.py:locate_frontmatter_end()` - limited search to first 10k chars
-2. Page footer removal in `ocr_cleanup.py:remove_page_footers()` - removes "TITLE    123" patterns
-3. Title extraction fix in `metadata.py:_is_likely_author_name()` - filters author names from title candidates
-4. Header position fix in `restructure.py:remove_frontmatter_from_body()` - correct offset calculation
-
-**Bugfixes (v1.0.2):** TOC parsing and footer removal improvements:
-5. TOC isolated chapter numbers in `toc_parser.py:_preprocess_toc_text()` - joins chapter numbers on separate lines (e.g., "1\nCONTEXTUALIZAÇÃO...17" -> "1 CONTEXTUALIZAÇÃO...17")
-6. Footer regex fix in `ocr_cleanup.py:remove_page_footers()` - changed `\s` to `[ \t]` to prevent matching across newlines (was removing "ÍNDICE" along with footers)
-
-**Enhancements (v1.0.3):** Automatic corrections for LLM pipeline:
-7. `remove_figure_descriptions()` in `ocr_cleanup.py` - removes `**Type:**`...`*Confidence:*` blocks from Marco Converter
-8. `_fix_chapter_headers_fallback()` in `llm_pipeline.py` - detects CAPÍTULO/PARTE/APRESENTAÇÃO/PREFÁCIO patterns and adds `##` headers
-9. `get_output_filename()` in `assembler.py` - suggests output filename based on extracted title
-10. Improved `_insert_chapter_headers_by_title()` - stricter matching to avoid false positives on credit lines
 
 ### RAGFlow Integration
 
@@ -343,7 +250,7 @@ Key implications:
 ### Reference Files
 
 - `naive.py`, `parser.py`, `chunker.txt` - RAGFlow source code for analysis
-- `PLANO_BOOK_CONVERTER.md` - Implementation plan for book_converter (Livros)
+- `PLANO_BOOK_CONVERTER.md` - Implementation plan for book_converter
 - `PLANO_TABLE_INJECTOR.md` - Implementation plan for table_injector (Fichas)
 - `PLANO_REMOVER_SUMARIO_REFERENCIAS.md` - Plan and results for post-processing scripts
 - `PLANO_SKILL_CONVERT_BOOK.md` - Implementation plan for /convert-book skill (LLM)
@@ -366,24 +273,16 @@ Key implications:
 │   ├── frontmatter.py
 │   ├── restructure.py
 │   └── table_injector.py # Phase 4.5: Table injection from YAML
-├── book_converter.py     # Wrapper script for book_converter package
 ├── .claude/
 │   └── skills/
 │       └── convert-book/        # Skill: /convert-book
 │           ├── SKILL.md         # Skill definition
-│           └── book_converter/  # Package for Livros Técnicos (v1.0.3)
+│           └── book_converter/  # Package for Livros Técnicos (v2.0.0)
 │               ├── __init__.py
-│               ├── __main__.py
-│               ├── cli.py
 │               ├── models.py
 │               ├── ocr_cleanup.py       # + remove_figure_descriptions()
-│               ├── toc_parser.py
-│               ├── metadata.py
-│               ├── chapter_detection.py
-│               ├── restructure.py
 │               ├── ragflow_optimize.py
 │               ├── assembler.py         # + get_output_filename()
-│               ├── pipeline.py
 │               ├── llm_analyzer.py      # LLM: prompt + parsing
 │               ├── structure_applier.py # LLM: apply structure
 │               └── llm_pipeline.py      # LLM: pipeline + fallback headers
