@@ -1,11 +1,18 @@
 """
-Fase 1: Limpeza de artefatos OCR.
+Fase 1: Limpeza de artefatos OCR para livros técnicos.
 
-Remove metadados do Marco Converter e DocMind, divisões de página,
-cabeçalhos espaçados, figuras e corrige hifenização quebrada.
+Padrões comuns vivem em `processamento.shared.ocr_patterns`. Este módulo
+adiciona o que é específico de livros: descrições de figuras
+(`**Type:**...*Confidence:*`), cabeçalhos/rodapés de página com letras
+espaçadas, footers com título do livro e fix de hifenização.
 """
 
 import re
+
+from processamento.shared.ocr_patterns import (
+    CLEANUP_PATTERNS,
+    remove_artifacts as _remove_artifacts_shared,
+)
 
 
 def remove_figure_descriptions(content: str) -> str:
@@ -33,131 +40,8 @@ def remove_figure_descriptions(content: str) -> str:
 
 
 def remove_artifacts(content: str) -> str:
-    """
-    Remove artefatos do formato Marco Converter e DocMind.
-
-    Artefatos removidos:
-    - Metadados de processamento (*Processed with...*, *Model:...*, etc.)
-    - Divisões de página (## Page X)
-    - Headers de arquivo e chunks
-    - Figuras, tabelas e suas descrições
-    - Separadores e linhas vazias excessivas
-    """
-    patterns = [
-        # === METADADOS MARCO CONVERTER ===
-        (r'^\*Processed with Marco-Compliant Converter.*?\*\s*\n', ''),
-        (r'^\*Model:.*?\*\s*\n', ''),
-        (r'^\*Total Figures Detected:.*?\*\s*\n', ''),
-
-        # === METADADOS DOCMIND ===
-        (r'^\*Processed with DocMind.*?\*\s*\n', ''),
-        (r'^\*Statistics:.*?\*\s*\n', ''),
-        (r'^\*Merged from \d+/\d+ chunks\*\s*\n', ''),
-
-        # === HEADERS DE ARQUIVO ===
-        # Título original (ex: # AGROECOLOGIABASES_2019)
-        (r'^# [A-Z][A-Z0-9_]+\s*\n', ''),
-        # Título com números no início (ex: # 2013Criarplantar...)
-        (r'^# \d{4}[A-Za-z][A-Za-z0-9_]*\s*\n', ''),
-        # Título com hífen (ex: # Apostila_Entomologia_Agricola-77-310-1)
-        (r'^# [A-Za-z][A-Za-z0-9_-]+\s*\n', ''),
-        # Parts do DocMind com underscore ou hífen (ex: # arquivo_part1of3)
-        (r'^# [A-Za-z0-9_-]+[_-]part\d+of\d+\s*\n', ''),
-
-        # === SEPARADORES ===
-        (r'^---\s*\n(?=\s*## Page)', ''),
-        (r'^---\s*\n(?=\s*#)', ''),
-        (r'^---\s*\n(?=\s*\n)', ''),
-
-        # === DIVISÕES DE PÁGINA ===
-        (r'^## Page \d+\s*\n+', ''),
-
-        # === FIGURAS E TABELAS (MÚLTIPLOS FORMATOS) ===
-        # Headers: ### Fig X:, ### Figure X:, ### Figura X:
-        (r'^### Fig \d+:.*\n', ''),
-        (r'^### Fig \d+\n', ''),
-        (r'^### Figure \d+:.*\n', ''),
-        (r'^### Figura \d+:.*\n', ''),
-        # Headers em maiúsculas: ### FIGURA X:
-        (r'^### FIGURA \d+:.*\n', ''),
-        (r'^### FIGURA \d+\n', ''),
-        # Headers sem número: ### Fig:
-        (r'^### Fig:.*\n', ''),
-        # Headers de tabelas
-        (r'^### Table:.*\n', ''),
-        (r'^### Table \d+:.*\n', ''),
-        (r'^### QUADRO \d+:.*\n', ''),
-        (r'^### TABELA \d+:.*\n', ''),
-        # Headers com letra (A, B, C) seguidos de descrição em MAIÚSCULAS
-        # Ex: ### A: FRAGMENTO FLORESTAL QUE SOFREU...
-        # Ex: ### A: ÁREA DE CERRADO COM MUITAS REBROTAS (PASTO "SUJO")...
-        (r'^### [A-Z]:\s*[A-ZÁÉÍÓÚÀÃÕÂÊÔÇ][A-ZÁÉÍÓÚÀÃÕÂÊÔÇ0-9,\.\s\-\(\)"\']+\n', ''),
-        # Headers com múltiplas letras: ### A and B:, ### IV:
-        (r'^### [A-Z]+ and [A-Z]+:.*\n', ''),
-        (r'^### [IVXLC]+:.*\n', ''),
-        # Headers com apenas número: ### 13: Reserva Legal...
-        (r'^### \d+:.*\n', ''),
-        # Headers None ou Figure (unnumbered)
-        (r'^### None:.*\n', ''),
-        (r'^### Figure \([^)]+\):.*\n', ''),
-        # Headers FIGURA com letra após número: ### FIGURA 11B:
-        (r'^### FIGURA \d+[A-Z]:.*\n', ''),
-
-        # Imagens markdown: ![Fig 1: ...](path)
-        (r'^!\[Fig \d+:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[Fig \d+\]\(.*?\)\s*\n', ''),
-        (r'^!\[Figure \d+:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[Figura \d+:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[Table:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[Table \d+:.*?\]\(.*?\)\s*\n', ''),
-        # Imagens sem descrição
-        (r'^!\[\d+:\s*\]\(.*?\)\s*\n', ''),
-        (r'^!\[None:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[A and B:.*?\]\(.*?\)\s*\n', ''),
-        # Imagens com letra (A, B, C) seguidas de descrição em MAIÚSCULAS
-        # Ex: ![A: FRAGMENTO FLORESTAL...](images/page_035.png)
-        (r'^!\[[A-Z]:\s*[A-ZÁÉÍÓÚÀÃÕÂÊÔÇ][^\]]*\]\(.*?\)\s*\n', ''),
-        # Imagens com FIGURA em maiúsculas: ![FIGURA X: ...]
-        (r'^!\[FIGURA \d+:.*?\]\(.*?\)\s*\n', ''),
-        (r'^!\[FIGURA \d+\]\(.*?\)\s*\n', ''),
-        # Imagens com Figure sem número: ![Figure (unnumbered): ...]
-        (r'^!\[Figure \([^)]+\):.*?\]\(.*?\)\s*\n', ''),
-        # Imagens com apenas número: ![13: Reserva Legal...]
-        (r'^!\[\d+:.*?\]\(.*?\)\s*\n', ''),
-        # Qualquer imagem referenciando pasta images/
-        # Este é o padrão mais genérico - captura tudo que sobrar
-        (r'^!\[[^\]]+\]\(images/[^)]+\)\s*\n', ''),
-
-        # Descrições de figuras em itálico (linhas longas começando com *)
-        # Padrão: *Texto descritivo longo com pelo menos 50 caracteres...*
-        (r'^\*[A-Z][^*\n]{50,}\*\s*\n', ''),
-
-        # Links para YAML metadata
-        (r'^\*YAML Metadata:.*?\*\s*\n', ''),
-
-        # === FOOTNOTES ===
-        (r'^---\s*\n\*\*Footnotes:\*\*\s*\n', ''),
-        (r'^\[\^\d+\]:.*\n', ''),
-
-        # === OUTROS ===
-        # Hífens decorativos (ex: "texto ------- texto")
-        (r'-{4,}', ' — '),
-
-        # Pontos iniciais em parágrafos (artefato OCR)
-        # Tanto maiúscula quanto minúscula após o ponto
-        (r'^(\s*)\. (?=[A-Za-z])', r'\1'),
-    ]
-
-    for pattern, replacement in patterns:
-        content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
-
-    # Limpar linhas em branco excessivas (máximo 2 consecutivas)
-    content = re.sub(r'\n{3,}', '\n\n', content)
-
-    # Remover linhas em branco no início
-    content = content.lstrip('\n')
-
-    return content
+    """Remove artefatos OCR comuns (Marco/DocMind, divisões, figuras, etc)."""
+    return _remove_artifacts_shared(content, CLEANUP_PATTERNS)
 
 
 def clean_page_headers(content: str) -> str:

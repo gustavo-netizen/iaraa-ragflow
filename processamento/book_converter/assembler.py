@@ -1,41 +1,23 @@
 """
-Montagem final do documento convertido.
+Montagem final do documento convertido para RAGFlow.
 
-Este módulo monta o documento final com:
-- YAML frontmatter com metadados do livro
-- Conteúdo reestruturado e otimizado
-- Formato pronto para ingestão no RAGFlow
+Helpers genéricos (`generate_id`, `format_yaml_value`, `format_yaml_list`,
+`format_authors_display`) vêm de `processamento.shared`. Este módulo só
+guarda o que é específico de livros: estrutura do frontmatter (campos
+editora/ano/edição/isbn/tags/estrutura) e a montagem do documento com
+blockquote de metadados.
 """
 
 import re
-from pathlib import Path
+
+from processamento.shared.yaml_writer import (
+    generate_id,
+    format_yaml_value,
+    format_yaml_list,
+    format_authors_display,
+)
+
 from .models import BookMetadata, TocEntry
-
-
-def generate_id(filename: str) -> str:
-    """
-    Gera um ID único baseado no nome do arquivo.
-
-    Args:
-        filename: Nome do arquivo de entrada
-
-    Returns:
-        ID normalizado (lowercase, sem extensão, underscores)
-    """
-    # Remover extensão
-    name = Path(filename).stem
-
-    # Normalizar: lowercase, substituir espaços e hífens por underscore
-    name = name.lower()
-    name = re.sub(r'[\s\-]+', '_', name)
-
-    # Remover caracteres especiais
-    name = re.sub(r'[^a-z0-9_]', '', name)
-
-    # Remover underscores múltiplos
-    name = re.sub(r'_+', '_', name)
-
-    return name.strip('_')
 
 
 def get_output_filename(metadata: 'BookMetadata', original_filename: str) -> str:
@@ -74,54 +56,6 @@ def get_output_filename(metadata: 'BookMetadata', original_filename: str) -> str
     return original_filename
 
 
-def format_yaml_value(value: str) -> str:
-    """
-    Formata um valor para YAML, escapando se necessário.
-
-    Args:
-        value: Valor string
-
-    Returns:
-        Valor formatado (com aspas se necessário)
-    """
-    if not value:
-        return '""'
-
-    # Se contém caracteres especiais YAML, usar aspas
-    if any(c in value for c in [':', '#', '[', ']', '{', '}', ',', '&', '*', '?', '|', '-', '<', '>', '=', '!', '%', '@', '`']):
-        # Escapar aspas duplas e usar aspas duplas
-        value = value.replace('\\', '\\\\').replace('"', '\\"')
-        return f'"{value}"'
-
-    return value
-
-
-def format_yaml_list(items: list[str]) -> str:
-    """
-    Formata uma lista para YAML inline.
-
-    Args:
-        items: Lista de strings
-
-    Returns:
-        String formatada para YAML: [item1, item2, item3]
-    """
-    if not items:
-        return "[]"
-
-    # Escapar aspas se necessário
-    escaped = []
-    for item in items:
-        if any(c in item for c in [',', ':', '"', '[', ']', '{', '}']):
-            # Usar aspas duplas e escapar aspas internas
-            item = item.replace('\\', '\\\\').replace('"', '\\"')
-            escaped.append(f'"{item}"')
-        else:
-            escaped.append(item)
-
-    return f"[{', '.join(escaped)}]"
-
-
 def generate_book_frontmatter(metadata: BookMetadata, filename: str,
                                toc_entries: list[TocEntry] = None) -> str:
     """
@@ -157,10 +91,10 @@ def generate_book_frontmatter(metadata: BookMetadata, filename: str,
     lines = [
         "---",
         f"id: {doc_id}",
+        f"tipo: livro_tecnico",
         f"titulo: {titulo_yaml}",
         f"autores: {autores_yaml}",
         f"editora: {editora_yaml}",
-        f"categoria: livro_tecnico",
     ]
 
     # Campos opcionais
@@ -187,29 +121,6 @@ def generate_book_frontmatter(metadata: BookMetadata, filename: str,
     lines.append("---")
 
     return '\n'.join(lines)
-
-
-def format_authors_display(authors: list[str]) -> str:
-    """
-    Formata lista de autores para exibição.
-
-    Args:
-        authors: Lista de nomes de autores
-
-    Returns:
-        String formatada: "Autor1, Autor2 e Autor3"
-    """
-    if not authors:
-        return ""
-
-    if len(authors) == 1:
-        return authors[0]
-
-    if len(authors) == 2:
-        return f"{authors[0]} e {authors[1]}"
-
-    # 3+ autores: "A, B, C e D"
-    return ", ".join(authors[:-1]) + f" e {authors[-1]}"
 
 
 def assemble_book_document(content: str, metadata: BookMetadata,

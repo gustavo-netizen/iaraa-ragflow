@@ -75,13 +75,10 @@ filename = input_path.name
 
 ### Passo 2: Gerar prompt e analisar com LLM
 
-O módulo está em `.claude/skills/convert-book/book_converter/`. Adicionar ao path:
+O módulo está em `processamento/book_converter/`. Importe diretamente:
 
 ```python
-import sys
-sys.path.insert(0, '.claude/skills/convert-book')
-
-from book_converter.llm_analyzer import build_analysis_prompt
+from processamento.book_converter.llm_analyzer import build_analysis_prompt
 
 prompt = build_analysis_prompt(content, max_lines=500)
 ```
@@ -124,7 +121,7 @@ O prompt solicita extração de:
 ### Passo 3: Executar pipeline de conversão
 
 ```python
-from book_converter.llm_pipeline import convert_book_with_llm
+from processamento.book_converter.llm_pipeline import convert_book_with_llm
 
 # llm_response é o JSON que você gerou no passo anterior
 document, log = convert_book_with_llm(
@@ -140,8 +137,8 @@ document, log = convert_book_with_llm(
 ### Passo 4: Salvar arquivo de saída
 
 ```python
-from book_converter.assembler import get_output_filename
-from book_converter.llm_analyzer import parse_llm_response
+from processamento.book_converter.assembler import get_output_filename
+from processamento.book_converter.llm_analyzer import parse_llm_response
 
 # Obter metadados para gerar nome do arquivo
 analysis = parse_llm_response(llm_response)

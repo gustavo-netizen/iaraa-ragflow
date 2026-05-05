@@ -9,7 +9,21 @@ Fase 4 do pipeline:
 """
 
 import re
+
+from processamento.shared.ragflow import format_bullets
+from processamento.shared.yaml_writer import format_authors_display
+
 from .config import SECTION_PATTERNS, SUBSECTION_PATTERNS
+
+
+__all__ = [
+    "restructure_sections",
+    "format_steps",
+    "format_bullets",
+    "extract_body",
+    "format_authors_display",
+    "assemble_document",
+]
 
 
 def restructure_sections(content: str) -> str:
@@ -49,24 +63,6 @@ def format_steps(content: str) -> str:
         r'### \1º passo',
         content, flags=re.MULTILINE
     )
-    return content
-
-
-def format_bullets(content: str) -> str:
-    """
-    Padroniza todos os bullets para asterisco (*).
-
-    Converte:
-    - "- item" -> "* item"
-    - "-item" -> "* item" (sem espaço)
-    - "• item" -> "* item"
-    """
-    # Hífen para asterisco (com espaço)
-    content = re.sub(r'^-\s+', '* ', content, flags=re.MULTILINE)
-    # Hífen para asterisco (sem espaço, seguido de letra)
-    content = re.sub(r'^-([A-Za-záéíóúàãõâêôçÁÉÍÓÚÀÃÕÂÊÔÇ])', r'* \1', content, flags=re.MULTILINE)
-    # Bullet unicode para asterisco
-    content = re.sub(r'^•\s*', '* ', content, flags=re.MULTILINE)
     return content
 
 
@@ -128,24 +124,6 @@ def extract_body(content: str, title: str) -> str:
     body = re.sub(r'\n{3,}', '\n\n', body)
 
     return body
-
-
-def format_authors_display(authors: list[str]) -> str:
-    """
-    Formata lista de autores para exibição.
-
-    Exemplos:
-    - ["A. B. Silva"] -> "A. B. Silva"
-    - ["A. B. Silva", "C. D. Santos"] -> "A. B. Silva e C. D. Santos"
-    - ["A", "B", "C"] -> "A, B e C"
-    """
-    if not authors:
-        return ""
-    if len(authors) == 1:
-        return authors[0]
-    if len(authors) == 2:
-        return f"{authors[0]} e {authors[1]}"
-    return ', '.join(authors[:-1]) + f' e {authors[-1]}'
 
 
 def assemble_document(frontmatter: str, title: str, authors: list[str],

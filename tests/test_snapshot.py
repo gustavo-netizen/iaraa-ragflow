@@ -15,7 +15,6 @@ e justificativa no commit message.
 from __future__ import annotations
 
 import os
-import sys
 import json
 import difflib
 from pathlib import Path
@@ -25,9 +24,6 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 GOLDEN = Path(__file__).resolve().parent / "golden"
-
-# book_converter ainda vive em .claude/skills/convert-book/ (B.1 move pra processamento/).
-sys.path.insert(0, str(ROOT / ".claude" / "skills" / "convert-book"))
 
 
 def _diff(actual: str, expected: str, label: str) -> str:
@@ -69,7 +65,7 @@ def test_ficha_pipeline_matches_golden() -> None:
 
 
 def test_livro_pipeline_matches_golden() -> None:
-    from book_converter.llm_pipeline import convert_book_with_llm
+    from processamento.book_converter.llm_pipeline import convert_book_with_llm
 
     fixture = FIXTURES / "livro_fixture.md"
     content = fixture.read_text(encoding="utf-8")
