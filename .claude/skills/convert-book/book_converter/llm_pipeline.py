@@ -9,15 +9,13 @@ Este módulo orquestra o pipeline completo de conversão:
 5. Montagem final com YAML frontmatter
 """
 
-from pathlib import Path
 from .llm_analyzer import (
     build_analysis_prompt,
     parse_llm_response,
     format_analysis_summary,
-    AnalysisResult
 )
 from .ocr_cleanup import clean_all
-from .structure_applier import apply_structure, format_structure_summary, remove_sections
+from .structure_applier import format_structure_summary, remove_sections
 from .models import ChapterBoundary
 import re
 from .ragflow_optimize import optimize_for_ragflow, format_optimize_summary
@@ -328,45 +326,3 @@ def convert_book_with_llm(content: str,
     log = '\n'.join(log_parts)
 
     return document, log
-
-
-def convert_book_with_analysis(content: str,
-                                filename: str,
-                                analysis: AnalysisResult,
-                                include_frontmatter: bool = True) -> str:
-    """
-    Converte livro usando AnalysisResult já parseado.
-
-    Versão simplificada para quando a análise já foi feita.
-
-    Args:
-        content: Conteúdo MD do livro
-        filename: Nome do arquivo
-        analysis: Resultado da análise LLM (já parseado)
-        include_frontmatter: Se True, inclui YAML frontmatter
-
-    Returns:
-        Documento final
-    """
-    # Limpeza OCR (passar título para remover headers/footers específicos)
-    content = clean_all(content, book_title=analysis.metadata.titulo)
-
-    # Aplicar estrutura
-    content = apply_structure(
-        content,
-        analysis.chapters,
-        analysis.sections_to_remove
-    )
-
-    # Otimização RAGFlow
-    content = optimize_for_ragflow(content)
-
-    # Montagem final
-    document = assemble_book_document(
-        content=content,
-        metadata=analysis.metadata,
-        filename=filename,
-        include_frontmatter=include_frontmatter
-    )
-
-    return document

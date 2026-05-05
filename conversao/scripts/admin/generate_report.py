@@ -414,7 +414,7 @@ class TaskReportGenerator:
 def main():
     parser = argparse.ArgumentParser(description="生成任务报告")
     parser.add_argument("--base-dir", "-d",
-                       default=str(Path(__file__).parent.parent),
+                       default=str(Path(__file__).parent.parent.parent),
                        help="DocMind 根目录")
     parser.add_argument("--task-name", "-t", required=True,
                        help="任务名称 (如: RedMarx-Lenin-Vol11-20)")

@@ -98,19 +98,19 @@ def load_blocked_pages(chunks_dir: str = CHUNKS_DIR) -> List[Dict]:
     """加载被拦截的页面列表"""
 
     # 优先从报告文件加载
-    report_path = Path(__file__).parent.parent / REPORT_FILE
+    report_path = Path(__file__).parent.parent.parent / REPORT_FILE
     if report_path.exists():
         with open(report_path, 'r') as f:
             pages = json.load(f)
             # 确保 chunk_dir 字段存在
             for p in pages:
                 if 'chunk_dir' not in p:
-                    p['chunk_dir'] = str(Path(__file__).parent.parent / CHUNKS_DIR / p['chunk'])
+                    p['chunk_dir'] = str(Path(__file__).parent.parent.parent / CHUNKS_DIR / p['chunk'])
             return pages
 
     # 从 validation.yaml 扫描
     blocked = []
-    chunks_path = Path(__file__).parent.parent / chunks_dir
+    chunks_path = Path(__file__).parent.parent.parent / chunks_dir
 
     for vfile in glob.glob(str(chunks_path / "*/*.validation.yaml")):
         try:
@@ -474,7 +474,7 @@ API 限制 (你的账户):
             print(f"  ... 还有 {len(stats.errors) - 10} 个错误")
 
     # 保存报告
-    report_path = Path(__file__).parent.parent / "reports" / "recovery_report.json"
+    report_path = Path(__file__).parent.parent.parent / "reports" / "recovery_report.json"
     report_path.parent.mkdir(exist_ok=True)
 
     report = {

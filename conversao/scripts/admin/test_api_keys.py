@@ -11,7 +11,7 @@ import dashscope
 from dashscope import MultiModalConversation
 
 # Load environment variables
-env_path = Path(__file__).parent.parent / '.env'
+env_path = Path(__file__).parent.parent.parent / '.env'
 load_dotenv(env_path)
 
 def test_api_key(key_num: int, api_key: str) -> dict:

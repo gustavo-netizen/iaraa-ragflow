@@ -142,7 +142,7 @@ def list_history(base_dir: Path):
 def main():
     parser = argparse.ArgumentParser(description="管理 progress.json 历史")
     parser.add_argument("--base-dir", "-d",
-                       default=str(Path(__file__).parent.parent),
+                       default=str(Path(__file__).parent.parent.parent),
                        help="DocMind 根目录")
     parser.add_argument("--task-name", "-t", default="",
                        help="任务名称 (用于归档文件名)")

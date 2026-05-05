@@ -1,0 +1,20 @@
+{
+  "metadados": {
+    "titulo": "Livro Fixture para Snapshot",
+    "autores": ["João da Silva", "Maria de Souza"],
+    "editora": ["Embrapa"],
+    "ano": 2024,
+    "isbn": "978-85-7035-999-9"
+  },
+  "capitulos": [
+    {"titulo": "APRESENTAÇÃO", "linha_inicio": 46, "nivel": "chapter"},
+    {"titulo": "CAPÍTULO 1 - INTRODUÇÃO", "linha_inicio": 57, "nivel": "chapter"},
+    {"titulo": "CAPÍTULO 2 - METODOLOGIA", "linha_inicio": 78, "nivel": "chapter"}
+  ],
+  "remover": {
+    "frontmatter": [1, 34],
+    "toc": [35, 43],
+    "figuras": [[66, 71]],
+    "referencias": [[92, 100]]
+  }
+}

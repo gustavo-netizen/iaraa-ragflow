@@ -448,7 +448,7 @@ def main():
     parser = argparse.ArgumentParser(description="DocMind 后台监控")
     parser.add_argument("--task-name", "-t", required=True, help="任务名称")
     parser.add_argument("--base-dir", "-d",
-                       default=str(Path(__file__).parent.parent),
+                       default=str(Path(__file__).parent.parent.parent),
                        help="DocMind 根目录")
     parser.add_argument("--interval", "-i", type=int, default=30,
                        help="采样间隔(秒)")

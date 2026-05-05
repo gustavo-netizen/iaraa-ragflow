@@ -22,6 +22,7 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 SPLIT_DIR="$SCRIPT_DIR/input/split_pdfs"
 LOGS_DIR="$SCRIPT_DIR/logs"
 SCRIPTS_DIR="$SCRIPT_DIR/scripts"
+ADMIN_DIR="$SCRIPTS_DIR/admin"
 PROGRESS_FILE="$SCRIPT_DIR/progress.json"
 FINAL_DELIVERY="$SCRIPT_DIR/final-delivery"
 
@@ -110,7 +111,7 @@ done
 
 # 列出历史记录
 if [ "$LIST_HISTORY" = true ]; then
-    python3 "$SCRIPTS_DIR/archive_progress.py" --list
+    python3 "$ADMIN_DIR/archive_progress.py" --list
     exit 0
 fi
 
@@ -134,9 +135,9 @@ if [ "$RESTART" = true ]; then
     if [ -f "$PROGRESS_FILE" ]; then
         echo "   📦 归档旧进度..."
         if [ -n "$TASK_NAME" ]; then
-            python3 "$SCRIPTS_DIR/archive_progress.py" --task-name "$TASK_NAME"
+            python3 "$ADMIN_DIR/archive_progress.py" --task-name "$TASK_NAME"
         else
-            python3 "$SCRIPTS_DIR/archive_progress.py"
+            python3 "$ADMIN_DIR/archive_progress.py"
         fi
     fi
 
@@ -244,7 +245,7 @@ MONITOR_PID=""
 if [ "$MONITOR" = true ]; then
     echo -e "${BLUE}📊 启动后台监控...${NC}"
     mkdir -p "$SCRIPT_DIR/monitor" "$SCRIPT_DIR/history"
-    python3 "$SCRIPTS_DIR/monitor_daemon.py" \
+    python3 "$ADMIN_DIR/monitor_daemon.py" \
         --task-name "$TASK_NAME" \
         --base-dir "$SCRIPT_DIR" \
         --interval 30 &
@@ -548,7 +549,7 @@ echo "======================================================================"
 echo "Step 9: Generate Task Report"
 echo "======================================================================"
 
-python3 "$SCRIPTS_DIR/generate_report.py" \
+python3 "$ADMIN_DIR/generate_report.py" \
     --task-name "$TASK_NAME" \
     --base-dir "$SCRIPT_DIR" || echo -e "${YELLOW}⚠️  报告生成失败，但不影响转换结果${NC}"
 

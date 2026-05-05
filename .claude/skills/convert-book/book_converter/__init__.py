@@ -37,7 +37,7 @@ from .llm_analyzer import (
     parse_llm_response,
 )
 from .llm_pipeline import convert_book_with_llm
-from .structure_applier import apply_structure, format_structure_summary, remove_sections
+from .structure_applier import format_structure_summary, remove_sections
 
 __all__ = [
     # Modelos
@@ -67,7 +67,6 @@ __all__ = [
     # LLM pipeline
     "convert_book_with_llm",
     # Structure applier
-    "apply_structure",
     "format_structure_summary",
     "remove_sections",
 ]

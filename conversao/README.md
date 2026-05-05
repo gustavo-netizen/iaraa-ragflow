@@ -120,8 +120,11 @@ DocMind0.8/
 │   ├── progress_manager.py       # Resume/checkpoint manager
 │   ├── split_large_pdfs_smart.py # Smart PDF splitting
 │   ├── merge_results_full.py     # Result merging
-│   ├── merge_split_pdfs.py       # Chunk merging
-│   └── olmocr_api_config.py      # API configuration
+│   ├── retry_failed_pages.py     # Retry failed pages
+│   ├── postprocess.py            # Markdown post-processing
+│   ├── generate_quality_report.py # KQI metrics
+│   ├── final_delivery_check.py   # Output validation
+│   └── admin/                    # Utilities (monitor, archive, audit, ad-hoc)
 ├── input/                  # Place PDFs here
 ├── output/                 # Processing output (auto-generated)
 ├── final-delivery/         # Clean output (1 folder per book)
