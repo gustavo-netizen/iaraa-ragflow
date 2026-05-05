@@ -138,10 +138,10 @@ def test_from_env_loads_app_config():
     assert pipeline.config.llm_model
 
 
-def test_run_not_yet_implemented(empty_root: Path):
+def test_run_with_empty_input_exits_zero(empty_root: Path):
+    """No PDFs in input/ → run() prints the legacy message and returns 0."""
     pipeline = Pipeline.from_env(empty_root)
-    with pytest.raises(NotImplementedError):
-        pipeline.run()
+    assert pipeline.run() == 0
 
 
 # -------------------------------------------------------- Pipeline.status
