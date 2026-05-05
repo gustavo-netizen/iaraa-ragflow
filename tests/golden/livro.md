@@ -20,7 +20,7 @@ Este é um livro técnico fictício criado para fins de teste do pipeline de con
 
 Os capítulos a seguir descrevem uma metodologia hipotética de estudo agroecológico, com referências também fictícias.
 
-## APÍTULO 1 - INTRODUÇÃO
+## INTRODUÇÃO
 
 A pesquisa agroecológica no Brasil tem crescido consistentemente nas últimas décadas, impulsionada por demandas tanto de agricultores familiares quanto de centros de pesquisa.
 
@@ -28,7 +28,7 @@ Este capítulo apresenta o contexto histórico e as principais correntes teóric
 
 O diagrama acima ilustra a relação entre os conceitos centrais discutidos ao longo do capítulo.
 
-## APÍTULO 2 - METODOLOGIA
+## METODOLOGIA
 
 A metodologia adotada combina revisão bibliográfica com estudo de caso em propriedades familiares do semiárido nordestino.
 

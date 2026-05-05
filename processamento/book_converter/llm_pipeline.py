@@ -138,16 +138,28 @@ def _insert_chapter_headers_by_title(content: str,
 
 
 def _clean_chapter_title_text(title: str) -> str:
-    """
+    r"""
     Limpa título do capítulo removendo numeração.
+
+    Specific patterns (CAPÍTULO N, PARTE N) run before the generic standalone
+    roman-numeral pattern, so "CAPÍTULO 1 - INTRODUÇÃO" gets stripped to
+    "INTRODUÇÃO" (not "APÍTULO 1 - INTRODUÇÃO" — bug captured during Fase 0.1
+    of PLANO_REFATORACAO.md, fixed in Fase H.1). The roman-numeral pattern
+    also has a lookahead requiring ``[\s.\-–—]|$`` after the IVXLC sequence
+    so the leading I/V/X/L/C of "INTRODUÇÃO", "VOLUME", "CONCLUSÃO" etc.
+    won't be stripped when no specific pattern matches.
     """
     patterns = [
-        r'^(\d+\.?\s*[-–—]?\s*)',           # 1. ou 1 -
-        r'^([IVXLC]+\.?\s*[-–—]?\s*)',      # I. ou I -
-        r'^(Cap[íi]tulo\s+\d+\.?\s*[-–—]?\s*)',  # Capítulo 1
-        r'^(CAP[ÍI]TULO\s+[IVXLC\d]+\.?\s*[-–—]?\s*)',  # CAPÍTULO I
-        r'^(Parte\s+\d+\.?\s*[-–—]?\s*)',   # Parte 1
-        r'^(PARTE\s+[IVXLC\d]+\.?\s*[-–—]?\s*)',  # PARTE I
+        # Specific patterns first — most specific match wins.
+        r'^(CAP[ÍI]TULO\s+[IVXLC\d]+\.?\s*[-–—]?\s*)',  # CAPÍTULO I / CAPÍTULO 1
+        r'^(Cap[íi]tulo\s+\d+\.?\s*[-–—]?\s*)',         # Capítulo 1
+        r'^(PARTE\s+[IVXLC\d]+\.?\s*[-–—]?\s*)',        # PARTE I
+        r'^(Parte\s+\d+\.?\s*[-–—]?\s*)',               # Parte 1
+        # Generic numeric prefix.
+        r'^(\d+\.?\s*[-–—]?\s*)',                       # 1. ou 1 -
+        # Standalone roman numeral — lookahead anchors the IVXLC sequence so
+        # leading roman letters in real words are not stripped.
+        r'^([IVXLC]+(?=[\s.\-–—]|$)\.?\s*[-–—]?\s*)',   # I. ou I -
     ]
 
     result = title.strip()
