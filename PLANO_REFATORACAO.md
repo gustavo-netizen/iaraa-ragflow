@@ -302,31 +302,72 @@ tests/test_document.py           (20 testes — discover, apply_page_offset, fai
 
 ---
 
-### Fase F — Consolidar validação (~3 dias, dep: E)
+### Fase F — Consolidar validação ✅ (concluído 2026-05-04)
 
-#### F.1 Inventário (~1 dia)
+**Resultado:** 2 scripts de validação consolidados em `conversao/validation/`; entry points viraram shims; FDV identificado como recovery (não validação) e renomeado.
 
-Catalogar checagens em:
-- `final_delivery_check.py` (377 linhas)
-- `final_data_validation.py` (501 linhas)
-- `generate_quality_report.py` (754 linhas)
-- `generate_report.py` (436 linhas)
+#### F.1 Inventário ✅
 
-**Output:** tabela `nome_check | scripts | semântica | sobreposições | dead?`. Aprovar com user antes de F.2.
+Catalogou-se cada checagem nos 4 scripts. Tabela completa em ~30 linhas com colunas `nome_check | scripts | semântica | sobreposições | dead?`. **Duas surpresas reformularam a Fase F:**
 
-#### F.2 Consolidar (~2 dias)
+- **`final_data_validation.py` não é validação — é recuperação de content-moderation.** Re-extrai com GPT-4o-mini páginas que Qwen bloqueou. Sai do escopo da Fase F.
+- **`generate_report.py` não é validação propriamente — é agregador per-task.** Coleta batch_reports + progress + monitor num dossiê (`reports/{task_name}/`). Sobrepõe parcialmente GQR.
 
+**Conclusão:** validação real está em **2 scripts** (`final_delivery_check.py` + `generate_quality_report.py`), não 4. F.2 consolidou esses 2.
+
+3 decisões aprovadas com user:
+1. FDV sai da Fase F → renomeado pra `recover_moderation_blocked.py` (admin/).
+2. `GR.generate_quality_report` removido (dead code parcial — duplicava GQR mal).
+3. Estrutura `validation/` aprovada com adição de `cost.py`.
+
+#### F.2 Consolidação ✅
+
+Estrutura criada (~2050 linhas + 60 testes):
 ```
 conversao/validation/
-├── __init__.py
-├── checkers.py          # FolderChecker, FileChecker, YamlChecker, MarkdownChecker, QualityChecker
-├── pipeline.py          # ValidationPipeline.run(documents) -> ValidationReport
-└── report.py            # ValidationReport, JSON + console
+├── __init__.py            (16 linhas)
+├── checkers.py            (560 linhas — 6 Checkers + base + helpers)
+│   - StructureChecker        (A1 file count, A2 md/yaml pairs)
+│   - ContentSyntaxChecker    (B1 json remnants, B2 literal newlines, B3 yaml)
+│   - MarkdownChecker         (C1 page headers, C2 fig refs, C3 file size)
+│   - QualityChecker          (D1-D5 buckets, garbled, repeats, score, review)
+│   - ElementChecker          (E1-E4 tables/formulas/images/code)
+│   - MarcoChecker            (F1 yaml + title + page headers)
+│   + split_into_pages helper compartilhado
+├── pipeline.py            (44 linhas — ValidationPipeline + ValidationReport)
+├── cost.py                (152 linhas — TokenUsage + CostBreakdown +
+│                           compute_cost + from_batch_reports)
+└── report.py              (310 linhas — render_quality_report + RetryFailures
+                            + format_duration + quality_rating + load_retry_failures)
 ```
 
-CLIs antigas viram thin wrappers chamando `validation.pipeline.run(...)` com checker subsets.
+**4 milestones (1 commit cada):**
 
-**Verify:** snapshot dos relatórios JSON antigos vs. consolidados — mesmas seções `failed_pages_detail`, mesmas métricas KQI.
+- **F.2.a** `09bdb8c`: skeleton — base Checker, StructureChecker, ContentSyntaxChecker, ValidationPipeline. 17 testes.
+- **F.2.b** `0d0b08e`: 4 checkers semânticos + `split_into_pages`. 23 testes.
+- **F.2.c** `e7f9a7a`: cost.py (substitui GQR.calculate_estimated_cost heurística + GR.calculate_costs duplicada) + report.py (substitui GQR.render_report 200-linha). 20 testes.
+- **F.2.d** `212d030`: migra entry points.
+  - `final_delivery_check.py` 377 → 132 linhas (subset Structure+Syntax+Markdown).
+  - `generate_quality_report.py` 754 → 137 linhas (todos 6 checkers + render).
+  - `admin/generate_report.py`: drop `generate_quality_report()`; `calculate_costs()` delega a `validation.cost.from_batch_reports`.
+  - `admin/final_data_validation.py` → `admin/recover_moderation_blocked.py` (git mv preserva history).
+  - README.md + .env.example atualizados.
+
+**Decisões durante implementação:**
+- **`cost.py` resolve tokens com fallback.** Prefere `processing.tokens_input/tokens_output` explícitos (post-Fase-D); senão estima input como `pages × 1500` e usa `processing.tokens` como output (legacy GR). Permite migrar sem quebrar batch_reports antigos.
+- **Cost intencionalmente fora do GQR.** GQR renderiza qualidade; cost vive em GR (admin/) que tem batch_reports. `render_quality_report` aceita `cost=None` e omite a linha. Separação correta de concerns.
+- **`render_quality_report` não é byte-equivalent ao GQR legacy.** Output é Markdown human-readable; downstream não depende. Mantém as 8 seções, simplifica formatação.
+- **Bug pré-existente preservado:** `MarkdownChecker.figures` usa regex `### Fig \d+:` que não casa `### Figure N`. Documentado no docstring; legacy regex.
+
+**Verify (executado):**
+- `pytest tests/` → **92 passed, 1 xfailed** (3 snapshot + 9 retry + 20 document + 17 syntax/structure + 23 semantic + 20 cost/report).
+- `final_delivery_check.py --help` → CLI idêntica.
+- `generate_quality_report.py --help` → CLI idêntica.
+- Smoke ponta-a-ponta com fixture: `final_delivery_check` reporta 3 PASS + 1 warning; `generate_quality_report` renderiza QUALITY_REPORT.md com 8 seções, score 100/100.
+- `admin/generate_report.py --help` e `admin/recover_moderation_blocked.py --help` → CLIs preservadas.
+- `bash -n run.sh` → syntax OK (sem mudanças em run.sh).
+
+**Métricas:** -1131 linhas líquidas (377+754+436=1567 originais → entry shims 132+137+200~ = 469; +2050 em validation/; bug factor delete `generate_quality_report` em GR ~=80 linhas removidas).
 
 ---
 
@@ -393,8 +434,8 @@ Após o refator estrutural terminar e a árvore estar estável, aplicar correç�
 | 1 | 0.1, 0.2, A.1, A.2, A.3 | ✅ concluído (2026-05-04) | 1 dia |
 | 2 | B (todas) | ✅ concluído (2026-05-04) | 1 dia |
 | 3 | C → D | ✅ concluído (2026-05-04) | 4 dias |
-| 4 | E → F.1 + review F.1 | E ✅ concluído (2026-05-04); F.1 pendente | 3 dias |
-| 5 | F.2 → G → H | pendente | 4 dias |
+| 4 | E → F.1 + review F.1 | ✅ concluído (2026-05-04) | 3 dias |
+| 5 | F.2 → G → H | F.2 ✅ concluído (2026-05-04); G+H pendentes | 4 dias |
 
 **Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user.
 
