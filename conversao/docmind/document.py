@@ -264,14 +264,21 @@ class Document:
 
     @staticmethod
     def _adjust_md_yaml_references(content: str, offset: int) -> str:
-        """Renumber ``yaml_metadata/Figure_N_pageM.yaml`` references by ``offset``."""
+        """Renumber ``yaml_metadata/Figure_N_pageM.yaml`` references by ``offset``.
+
+        The character class is restricted to filename-safe chars (``\\w./-``),
+        not the original ``[^_]`` (any non-underscore). The legacy class let
+        the match span across ``](`` in Markdown link syntax — when the same
+        path appeared as both link-text and URL (``[path](path)``), only the
+        URL got renumbered. Bug captured in Fase E xfail, fixed in Fase H.2.
+        """
         def replace_yaml_ref(match: re.Match) -> str:
             prefix = match.group(1)
             page_num = int(match.group(2))
             return f"{prefix}_page{page_num + offset}.yaml"
 
         return re.sub(
-            r"(yaml_metadata/[^_]+(?:_[^_]+)*)_page(\d+)\.yaml",
+            r"(yaml_metadata/[\w./-]+?)_page(\d+)\.yaml",
             replace_yaml_ref,
             content,
         )

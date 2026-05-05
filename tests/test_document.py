@@ -160,24 +160,20 @@ def test_apply_page_offset_shifts_yaml_references_in_url_position():
     assert "Figure_1_page101.yaml" in out
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing greedy-regex bug inherited from merge_results_full.py — when the "
-        "same path appears twice on a line (Markdown link `[text](url)` form, which "
-        "Stage-1 emits in `assembler.py`), only the URL portion is renumbered; the "
-        "link-text portion keeps the original page number. Cosmetic (URL is correct, "
-        "displayed text drifts). Documented for Fase H bug fixes."
-    ),
-    strict=True,
-)
-def test_apply_page_offset_yaml_refs_in_markdown_link_known_buggy():
+def test_apply_page_offset_yaml_refs_in_markdown_link():
+    """Both link-text and URL renumber when the same path appears twice.
+
+    Was a pre-existing greedy-regex bug inherited from ``merge_results_full.py``;
+    the legacy class ``[^_]`` allowed the match to span across ``](``. Fixed
+    in Fase H.2 by restricting to filename-safe chars (``\\w./-``).
+    """
     content = (
         "*YAML Metadata: [yaml_metadata/Figure_1_page1.yaml]"
         "(yaml_metadata/Figure_1_page1.yaml)*"
     )
     out = Document.apply_page_offset(content, 100)
-    # Both occurrences should renumber — but greedy regex only catches the URL.
     assert out.count("Figure_1_page101.yaml") == 2
+    assert "Figure_1_page1.yaml" not in out
 
 
 def test_apply_page_offset_combines_all_three_transforms():
