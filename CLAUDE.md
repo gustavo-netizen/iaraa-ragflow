@@ -31,6 +31,7 @@ Orchestrated by `run.sh`. Pipeline: split large PDFs → OCR (qwen-vl-plus) → 
 Key design: 3-page context window for cross-page references, multi-API-key load balancing with health monitoring, page-level checkpoint/resume in `progress.json` + filelock.
 
 **Module layout** (post-refactor):
+- `conversao/orchestrator.py` (Fase G) — single-file Python entry-point with `Pipeline.status()` and `Pipeline.run()` (Steps 1–9 via subprocess + tee streaming). CLI: `python orchestrator.py {status,run} [...]`. `run.sh` is now a thin shell wrapper around it.
 - `conversao/docmind/` (Fase D) — `retry.py`, `api_key_pool.py`, `qwen_client.py`, `page_processor.py`, `pipeline.py`, `document.py` (Stage-1 dataclass per PDF + chunks, with `discover()` / `is_complete()` / `failed_pages()` / `apply_page_offset()`).
 - `conversao/scripts/` — pipeline scripts at top level (`docmind_converter.py` is now a thin shim re-exporting `docmind.*`); utilities under `scripts/admin/`.
 - `conversao/validation/` (Fase F) — pluggable `Checker`s (`StructureChecker`, `ContentSyntaxChecker`, `MarkdownChecker`, `QualityChecker`, `ElementChecker`, `MarcoChecker`) + `cost.py` + `report.py`. Consumed by `final_delivery_check.py` and `generate_quality_report.py` shims.
@@ -97,4 +98,4 @@ After every structural change in Fases B–G, `pytest tests/` must pass before c
 - **`join_paragraph_lines()`**: Joins lines starting with lowercase or `(`/`[` (OCR continuation). Preserves blank lines, headers, list items, and lines starting with uppercase. Canonical implementation in `processamento/shared/ragflow.py`.
 - **`config.py`** (`processamento/ficha_converter/`): only ficha-specific patterns (`SECTION_PATTERNS`, `SUBSECTION_PATTERNS`, `TAG_KEYWORDS`). `CLEANUP_PATTERNS` and `ACCENT_MAP` live in `processamento/shared/` and are used by both converters.
 - **ADRs** in `docs/adr/`: ADR-0001 (id schema + `tipo`), ADR-0002 (book_converter LLM-agnostic), ADR-0003 (progress storage stays JSON+FileLock). Don't reopen without registering a new ADR.
-- **Refactor status**: `PLANO_REFATORACAO.md` tracks phases. Fases 0–F done on branch `refactor/fase-d-split-docmind`. Fase G (Python orchestrator + `Pipeline.status()`, thin `run.sh`) and Fase H (snapshot-captured bug fixes — e.g. `_clean_chapter_title_text` dropping the leading C of `CAPÍTULO`) are pending.
+- **Refactor status**: `PLANO_REFATORACAO.md` tracks phases. Fases 0–G done on branch `refactor/fase-d-split-docmind`. Only Fase H (snapshot-captured bug fixes — e.g. `_clean_chapter_title_text` dropping the leading C of `CAPÍTULO`) is pending. `conversao/orchestrator.py` is the Python entry-point; `run.sh` (198 lines) handles only env loading, monitor daemon, and the `--history` shortcut, then delegates to `python orchestrator.py run [...]`.

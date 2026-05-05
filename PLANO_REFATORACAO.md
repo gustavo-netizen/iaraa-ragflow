@@ -371,30 +371,37 @@ conversao/validation/
 
 ---
 
-### Fase G — Orquestrador Python + Status (~2 dias, dep: C, D, E, F)
+### Fase G — Orquestrador Python + Status ✅ (concluído 2026-05-05)
 
-**File:** `conversao/orchestrator.py` (NOVO):
+**Resultado:** `conversao/orchestrator.py` (926 linhas, single file per o plano) com `Pipeline.status()` + `Pipeline.run()`. `run.sh` reduzido de 558 → 198 linhas (-64%) — só env loading, monitor daemon, `--history` direto e `exec python orchestrator.py run`. 62 testes novos (status + run); suite 154 passed, 1 xfailed.
 
-```python
-class Pipeline:
-    def __init__(self, config: AppConfig, root: Path): ...
-    def run(self, restart: bool = False, retry_failed: bool = False): ...
-    def status(self) -> "PipelineStatus": ...
+**3 milestones (1 commit cada):**
 
-@dataclass
-class PipelineStatus:
-    documents: list[DocumentStatus]
-    def as_text(self) -> str: ...
-    def as_json(self) -> dict: ...
-```
+- **G.1** `1b86c55`: skeleton + `Pipeline.status()`. Reúne `progress.json` + `Document.discover` (E) + `VALIDATION_REPORT.json` (F) num `PipelineStatus` com `as_text()` (preserva formato byte-for-byte de `progress_manager.print_status()`) e `as_json()`. CLI `python orchestrator.py status [--json]`. 19 testes em `tests/test_orchestrator_status.py`.
+- **G.2** `aee0c12`: `Pipeline.run()` com 9 steps via subprocess + tee streaming. 5 inline parses do `run.sh` migrados pra Python puro testável: `_sanitize_short_name` (Step 5 short-name `cut|sed`), `_compute_expected_count` (Step 8), `_count_failed_chunks` (Step 2.5), `_create_direct_pdf_symlinks` (Step 3), `_mark_pipeline_completed` (Step 4 inline JSON edit). `RunOptions` @dataclass com env-var override (`MAX_PAGES`, `SEMAPHORE`, `LLM_CONCURRENT`). 43 testes em `tests/test_orchestrator_run.py`.
+- **G.3** `5a92034`: slim `run.sh` 558→198 linhas. Bash retém só API key loading, monitor daemon spawn/cleanup via `trap EXIT`, e `--history` shortcut (admin script). Resto delega a `python orchestrator.py run [...]`.
 
-`run.sh` reduzido a ~50 linhas: só env loading (`api/keys.txt` → env vars), python entry-point, monitor daemon. Mantém compatibilidade com flags atuais (`--restart`, `--status`, `--retry-failed`, `--task-name`, `--monitor`, `--history`).
+**Decisões durante implementação:**
 
-`Pipeline.status()` consome `Document.is_complete()` (E) + ValidationReport (F). Substitui inline parsing em `run.sh:312–327, 338–371`.
+- **Bash semantics preservadas exatamente:** `rc |=` entre steps em `Pipeline.run()` reproduz o `set -e + 2>&1 | tee` swallow do bash original (pipeline não aborta mid-run mesmo com falha). Step 9 (`generate_report.py`) silencia falha mirroring `|| echo` em `run.sh:554`.
+- **`Pipeline.status()` *fast filesystem check* em vez de delegar a `progress_manager`:** smoke real local pegou divergência interessante (progress.json says completed mas `.md` foi movido). Comportamento intencional — surface drift pra operador, sem custo. Pode virar `--deep` flag opcional no futuro.
+- **`AppConfig` continua em `scripts/`:** path-shim em `orchestrator.py` adiciona `scripts/` a `sys.path` no import (mesmo padrão de `docmind/__init__.py`). Mover `config.py` pra fora de `scripts/` é limpo mas fora de escopo de G.
+- **`subprocess.Popen` direto em vez de `subprocess.run`:** `_run_subprocess` faz tee streaming com `iter(stdout)` durante a execução; `subprocess.run` capturaria tudo e cuspiria no fim. Bash usa `2>&1 | tee LOG` em tempo real, então Popen é o match.
+- **`sys.executable` em vez de `"python3"`:** robustez em multi-Python envs. Importante porque o user pode ter venv ativo.
+- **`run.sh` 198 linhas, não ~50 do plano original:** o plano subestimou o env-loading bloat (api/keys.txt + .env + DASHSCOPE_API_KEY fallback ~50 linhas só por si). Reduzir mais exigiria mover env loading pra Python — fora de escopo (plan G explicitamente disse "env loading stays in bash").
+- **Atalho `--monitor` continua bash-side:** `trap EXIT` é mais limpo que gerenciar background daemon do Python. Daemon roda em paralelo ao orchestrator; cleanup garantido mesmo em CTRL-C.
 
-**Verify:**
-- `./run.sh --status` produz mesmo formato.
-- `./run.sh --restart` em 1 PDF pequeno produz mesmo `final-delivery/`.
+**Verify (executado):**
+- `./run.sh --help` → help text bilíngue completo, exit 0.
+- `./run.sh --status` → mesmo formato byte-for-byte do `progress_manager.print_status()` legacy + seções novas 文档 + 验证.
+- `./run.sh --history` → `archive_progress.py --list` formato preservado.
+- `./run.sh --retry-failed` → carrega `api/keys.txt`, ecoa "✅ API Keys 已配置", delega ao orchestrator, Step 2.5 detecta sem chunks dir, exit 0.
+- `bash -n run.sh` → syntax OK.
+- `pytest tests/` → **154 passed, 1 xfailed**.
+
+**NÃO testado:** pipeline completo `./run.sh --restart` com PDFs reais + API keys. Esse smoke é o `Verify` final do plano e custa créditos da Dashscope; deferred pra antes do merge da branch (decisão de produto). Tests cobrem cmd construction e run() com `subprocess.Popen` patcheado, então regressão estrutural seria pega.
+
+**Métricas:** orchestrator.py +926; run.sh -360 (558→198); tests/test_orchestrator_*.py +1500. Net ~+2000 linhas, mas elimina ~360 linhas de bash + ~150 linhas de inline JSON parsing duplicado. Trade-off: mais código, mais testável, mais consumível por ferramentas externas (`status --json` machine-readable).
 
 ---
 
@@ -435,7 +442,7 @@ Após o refator estrutural terminar e a árvore estar estável, aplicar correç�
 | 2 | B (todas) | ✅ concluído (2026-05-04) | 1 dia |
 | 3 | C → D | ✅ concluído (2026-05-04) | 4 dias |
 | 4 | E → F.1 + review F.1 | ✅ concluído (2026-05-04) | 3 dias |
-| 5 | F.2 → G → H | F.2 ✅ concluído (2026-05-04); G+H pendentes | 4 dias |
+| 5 | F.2 → G → H | F.2 ✅ (2026-05-04); G ✅ (2026-05-05); H pendente | 4 dias |
 
 **Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user.
 

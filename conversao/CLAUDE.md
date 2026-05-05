@@ -6,13 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DocMind is a high-performance PDF to Markdown converter using Alibaba's Qwen-VL API. It processes PDFs through OCR and vision-language models to extract text, tables, figures, and charts with structured YAML metadata.
 
+After Fase G of the refactor, the pipeline is orchestrated in Python (`conversao/orchestrator.py`). `run.sh` is a thin wrapper that handles env loading + monitor daemon + the `--history` shortcut, then delegates to `python orchestrator.py run [...]`. Operators see no behavior change; the CLI surface is preserved.
+
 ## Essential Commands
 
 ```bash
 # Run the main processing pipeline
 ./run.sh
 
-# Check processing progress
+# Check processing progress (delegates to orchestrator.py status)
 ./run.sh --status
 
 # Force restart from beginning (archives old progress)
@@ -26,6 +28,10 @@ DocMind is a high-performance PDF to Markdown converter using Alibaba's Qwen-VL 
 
 # View task history
 ./run.sh --history
+
+# Direct orchestrator invocation (bypass run.sh — useful for tooling/JSON status)
+python orchestrator.py status [--json]
+python orchestrator.py run [--restart] [--retry-failed] [-t TASK_NAME]
 ```
 
 ### Environment Variables for Tuning
