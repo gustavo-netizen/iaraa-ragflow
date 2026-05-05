@@ -122,9 +122,11 @@ DocMind0.8/
 │   ├── merge_results_full.py     # Result merging
 │   ├── retry_failed_pages.py     # Retry failed pages
 │   ├── postprocess.py            # Markdown post-processing
-│   ├── generate_quality_report.py # KQI metrics
-│   ├── final_delivery_check.py   # Output validation
-│   └── admin/                    # Utilities (monitor, archive, audit, ad-hoc)
+│   ├── generate_quality_report.py # KQI metrics (thin shim → validation/)
+│   ├── final_delivery_check.py   # Output validation (thin shim → validation/)
+│   └── admin/                    # Utilities (monitor, archive, audit, recovery)
+├── docmind/                # Stage-1 split: api_key_pool, qwen_client, page_processor, pipeline, retry, document
+├── validation/             # Pluggable checkers + cost + report (Fase F.2)
 ├── input/                  # Place PDFs here
 ├── output/                 # Processing output (auto-generated)
 ├── final-delivery/         # Clean output (1 folder per book)

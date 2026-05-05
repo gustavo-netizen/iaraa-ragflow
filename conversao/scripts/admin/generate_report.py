@@ -21,14 +21,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+# Make ``conversao/`` importable so we can pull cost computation from the
+# unified ``validation/cost.py`` (Fase F.2.c).
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_CONVERSAO_DIR = _SCRIPT_DIR.parent.parent
+if str(_CONVERSAO_DIR) not in sys.path:
+    sys.path.insert(0, str(_CONVERSAO_DIR))
+
+from validation.cost import from_batch_reports  # noqa: E402
+
 
 class TaskReportGenerator:
     """任务报告生成器"""
-
-    # Qwen-VL-Max 定价 (2024年价格)
-    # 注意: 这是官方价格，实际可能有折扣
-    PRICE_INPUT_PER_1K = 0.02   # ¥0.02/1000 input tokens
-    PRICE_OUTPUT_PER_1K = 0.02  # ¥0.02/1000 output tokens
 
     def __init__(self, base_dir: str, task_name: str):
         self.base_dir = Path(base_dir)
@@ -102,180 +106,70 @@ class TaskReportGenerator:
         return data
 
     def calculate_costs(self, batch_reports: List[Dict]) -> Dict:
-        """计算成本明细"""
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_pages = 0
+        """计算成本明细 — uses ``validation.cost.from_batch_reports`` (Fase F.2.c).
+
+        Returns the legacy dict shape that ``main()`` writes to ``cost_summary.json``;
+        the actual aggregation (token resolution, fallback estimation, recorded
+        cost) lives in ``validation/cost.py``.
+        """
+        cost = from_batch_reports(batch_reports)
+
+        # Per-PDF detail list — not part of CostBreakdown, extract here.
+        pdf_details: List[Dict[str, Any]] = []
         total_figures = 0
-        total_time = 0
-
-        pdf_details = []
-
-        for report in batch_reports:
-            if "pdfs" in report:
-                for pdf in report["pdfs"]:
-                    if pdf.get("success"):
-                        proc = pdf.get("processing", {})
-                        info = pdf.get("pdf_info", {})
-
-                        tokens = proc.get("tokens", 0)
-                        pages = info.get("pages", 0)
-                        figures = info.get("figures", 0)
-                        time_sec = proc.get("time", 0)
-
-                        # 估算输入tokens (图片为主)
-                        # 每页图片约 1500 tokens (150 DPI, A4)
-                        est_input_tokens = pages * 1500
-                        # 记录的 tokens 视为输出 tokens
-                        output_tokens = tokens
-
-                        total_input_tokens += est_input_tokens
-                        total_output_tokens += output_tokens
-                        total_pages += pages
-                        total_figures += figures
-                        total_time += time_sec
-
-                        pdf_details.append({
-                            "name": info.get("name", "unknown"),
-                            "pages": pages,
-                            "figures": figures,
-                            "input_tokens_est": est_input_tokens,
-                            "output_tokens": output_tokens,
-                            "time_sec": round(time_sec, 1),
-                        })
-
-            # 也检查 summary
-            if "summary" in report:
-                summary = report["summary"]
-                if total_pages == 0:
-                    total_pages = summary.get("total_pages", 0)
-                    total_figures = summary.get("total_figures", 0)
-                    total_time = summary.get("total_time", 0)
-
-        # 计算成本
-        input_cost = total_input_tokens * self.PRICE_INPUT_PER_1K / 1000
-        output_cost = total_output_tokens * self.PRICE_OUTPUT_PER_1K / 1000
-        total_cost = input_cost + output_cost
-
-        # 代码中记录的成本 (可能偏低)
-        recorded_cost = sum(
-            r.get("summary", {}).get("total_cost_cny", 0)
-            for r in batch_reports
-        )
+        for r in batch_reports:
+            for pdf in r.get("pdfs", []):
+                if not pdf.get("success"):
+                    continue
+                info = pdf.get("pdf_info", {})
+                proc = pdf.get("processing", {})
+                pages = info.get("pages", 0)
+                figures = info.get("figures", 0)
+                total_figures += figures
+                pdf_details.append({
+                    "name": info.get("name", "unknown"),
+                    "pages": pages,
+                    "figures": figures,
+                    "input_tokens_est": proc.get("tokens_input", pages * 1500),
+                    "output_tokens": proc.get("tokens_output", proc.get("tokens", 0)),
+                    "time_sec": round(proc.get("time", 0), 1),
+                })
 
         return {
             "task_name": self.task_name,
             "generated_at": datetime.now().isoformat(),
             "summary": {
-                "total_pages": total_pages,
+                "total_pages": cost.pages,
                 "total_figures": total_figures,
-                "total_time_sec": round(total_time, 1),
-                "total_time_formatted": self._format_duration(total_time),
+                "total_time_sec": cost.time_sec,
+                "total_time_formatted": self._format_duration(cost.time_sec),
             },
             "tokens": {
-                "input_tokens_estimated": total_input_tokens,
-                "output_tokens": total_output_tokens,
-                "total_tokens": total_input_tokens + total_output_tokens,
+                "input_tokens_estimated": cost.tokens.input_tokens,
+                "output_tokens": cost.tokens.output_tokens,
+                "total_tokens": cost.tokens.total,
             },
             "cost_analysis": {
                 "pricing": {
-                    "input_per_1k": self.PRICE_INPUT_PER_1K,
-                    "output_per_1k": self.PRICE_OUTPUT_PER_1K,
-                    "model": "qwen-vl-max-latest",
+                    "input_per_1k": cost.pricing_input_per_1k,
+                    "output_per_1k": cost.pricing_output_per_1k,
+                    "model": cost.model,
                 },
                 "calculated": {
-                    "input_cost_cny": round(input_cost, 2),
-                    "output_cost_cny": round(output_cost, 2),
-                    "total_cost_cny": round(total_cost, 2),
+                    "input_cost_cny": cost.input_cost_cny,
+                    "output_cost_cny": cost.output_cost_cny,
+                    "total_cost_cny": cost.total_cost_cny,
                 },
-                "recorded_in_code": round(recorded_cost, 2),
+                "recorded_in_code": cost.recorded_cost_cny,
                 "note": "calculated 基于官方定价估算，recorded_in_code 是代码记录值，实际账单可能因优惠而不同",
             },
             "per_page_metrics": {
-                "cost_per_page": round(total_cost / max(total_pages, 1), 4),
-                "tokens_per_page": round((total_input_tokens + total_output_tokens) / max(total_pages, 1), 0),
-                "time_per_page_sec": round(total_time / max(total_pages, 1), 2),
+                "cost_per_page": cost.cost_per_page,
+                "tokens_per_page": cost.tokens_per_page,
+                "time_per_page_sec": cost.time_per_page_sec,
             },
-            "pdf_details": pdf_details[:50],  # 只保留前50个，避免文件过大
+            "pdf_details": pdf_details[:50],
         }
-
-    def generate_quality_report(self, batch_reports: List[Dict], progress: Optional[Dict]) -> str:
-        """生成质量报告 Markdown"""
-
-        # 收集统计数据
-        total_pages = 0
-        total_figures = 0
-        total_chars = 0
-        failed_pages = 0
-        validation_stats = {
-            "total_tables": 0,
-            "total_formulas": 0,
-        }
-
-        for report in batch_reports:
-            if "summary" in report:
-                s = report["summary"]
-                total_pages += s.get("total_pages", 0)
-                total_figures += s.get("total_figures", 0)
-
-            if "pdfs" in report:
-                for pdf in report["pdfs"]:
-                    val = pdf.get("validation", {})
-                    validation_stats["total_tables"] += val.get("total_tables_detected", 0)
-                    validation_stats["total_formulas"] += val.get("total_formulas_detected", 0)
-
-        # 从 progress 获取失败信息
-        if progress:
-            pdfs_data = progress.get("pdfs", {})
-            for pdf_name, pdf_info in pdfs_data.items():
-                failed_pages += len(pdf_info.get("failed_pages", []))
-
-        # 生成报告
-        report = f"""# 质量报告: {self.task_name}
-
-生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-## 处理概要
-
-| 指标 | 数值 |
-|------|------|
-| 总页数 | {total_pages:,} |
-| 总图表 | {total_figures:,} |
-| 表格数 | {validation_stats['total_tables']:,} |
-| 公式数 | {validation_stats['total_formulas']:,} |
-| 失败页 | {failed_pages} |
-| 成功率 | {((total_pages - failed_pages) / max(total_pages, 1) * 100):.1f}% |
-
-## 验证结果
-
-"""
-
-        # 添加 PDF 验证详情
-        if batch_reports:
-            report += "### PDF 处理状态\n\n"
-            report += "| PDF | 页数 | 图表 | 状态 |\n"
-            report += "|-----|------|------|------|\n"
-
-            count = 0
-            for br in batch_reports:
-                for pdf in br.get("pdfs", []):
-                    if count >= 30:  # 限制行数
-                        report += "| ... | ... | ... | ... |\n"
-                        break
-                    info = pdf.get("pdf_info", {})
-                    status = "✅" if pdf.get("success") else "❌"
-                    report += f"| {info.get('name', 'unknown')[:40]} | {info.get('pages', 0)} | {info.get('figures', 0)} | {status} |\n"
-                    count += 1
-
-        report += """
-## 备注
-
-- 此报告由 `generate_report.py` 自动生成
-- 详细成本数据见 `cost_summary.json`
-- 验证数据见 `validation_result.json`
-"""
-
-        return report
 
     def generate_validation_result(self, batch_reports: List[Dict]) -> Dict:
         """生成验证结果 JSON"""
@@ -359,14 +253,9 @@ class TaskReportGenerator:
         generated_files["cost_summary"] = str(cost_file)
         print(f"      ✅ {cost_file.name}")
 
-        # 2. 质量报告
-        print("   生成质量报告...")
-        quality_md = self.generate_quality_report(batch_reports, progress)
-        quality_file = self.reports_dir / "quality_report.md"
-        with open(quality_file, 'w') as f:
-            f.write(quality_md)
-        generated_files["quality_report"] = str(quality_file)
-        print(f"      ✅ {quality_file.name}")
+        # 2. (Quality report removido na Fase F.2 — duplicava generate_quality_report.py
+        #     com formatação inferior; este dossiê per-task agora foca em cost+validation+log.
+        #     QUALITY_REPORT.md é gerado por scripts/generate_quality_report.py em final-delivery/.)
 
         # 3. 验证结果
         print("   生成验证结果...")
