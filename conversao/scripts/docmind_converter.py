@@ -24,6 +24,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 from collections import defaultdict
 
+from config import AppConfig
+
 # 资源监控
 try:
     from resource_monitor import ResourceMonitor
@@ -31,16 +33,19 @@ try:
 except ImportError:
     RESOURCE_MONITOR_AVAILABLE = False
 
+# Centralized runtime config — Phase C of PLANO_REFATORACAO.md.
+APP_CONFIG = AppConfig.from_env()
+
 # ============ Issue 4: 重试策略配置 ============
 
 @dataclass
 class RetryConfig:
     """重试策略配置"""
-    max_retries: int = 4                    # 最大重试次数
-    initial_delay: float = 1.0              # 初始延迟（秒）
+    max_retries: int = APP_CONFIG.retry_max_attempts
+    initial_delay: float = APP_CONFIG.retry_base_delay
     max_delay: float = 30.0                 # 最大延迟（秒）
     exponential_base: float = 2.0           # 指数退避基数
-    jitter: bool = True                     # 是否添加随机抖动
+    jitter: bool = APP_CONFIG.retry_jitter
 
     # 重试触发条件
     retry_on_status_codes: tuple = (429, 500, 502, 503, 504)  # HTTP状态码
@@ -284,7 +289,7 @@ class PromptMode(Enum):
     ENHANCED = "enhanced"   # ~2500 chars - 图表数据提取
 
 # 默认配置 (可通过命令行参数覆盖)
-DEFAULT_MODEL = "qwen3-vl-plus-2025-12-19"
+DEFAULT_MODEL = APP_CONFIG.ocr_model
 DEFAULT_CONTEXT_MODE = ContextMode.STANDARD
 DEFAULT_PROMPT_MODE = PromptMode.ENHANCED
 
@@ -537,8 +542,8 @@ _api_key_lock = asyncio.Lock()
 if API_KEYS:
     _api_key_monitor = APIKeyHealthMonitor(
         API_KEYS,
-        disable_threshold=5,      # 连续失败5次后禁用
-        disable_duration=300.0    # 禁用5分钟
+        disable_threshold=APP_CONFIG.health_disable_after,
+        disable_duration=float(APP_CONFIG.health_disable_duration)
     )
 
 async def get_next_api_key():
@@ -690,7 +695,7 @@ def simple_ocr_extract(image, retry_config: RetryConfig = DEFAULT_RETRY_CONFIG) 
             dashscope.api_key = api_key
 
             response = MultiModalConversation.call(
-                model='qwen3-vl-plus-2025-12-19',
+                model=APP_CONFIG.ocr_model,
                 messages=messages
             )
 
