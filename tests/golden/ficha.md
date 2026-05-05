@@ -1,10 +1,10 @@
 ---
-id: ficha_agroecologica_biofertilizante_fixture
+id: biofertilizante_fixture
+tipo: ficha_agroecologica
 titulo: Biofertilizante Fixture
 autores: [J. C. Silva, M. A. P. Souza]
 instituicao: [Ministério da Agricultura e Pecuária]
 tags: [agroecologia, biofertilizante, fixture, fermentacao, fermentacao-anaerobica, fermentacao-aerobica, esterco, esterco-bovino, microrganismos-eficientes]
-categoria: ficha_tecnica
 ficha_numero: 99
 resumo: Elaborador da ficha: SILVA, J. C.; SOUZA, M. A. P.
 ---
@@ -26,7 +26,9 @@ Este biofertilizante de teste é uma preparação líquida obtida pela fermenta�
 * 200 litros de água limpa
 
 ## Como preparar
-1. Misturar todos os ingredientes em recipiente plástico de 220 litros 2. Tampar e deixar fermentar por 30 dias em local sombreado 3. Coar em pano fino antes de aplicar
+1. Misturar todos os ingredientes em recipiente plástico de 220 litros
+2. Tampar e deixar fermentar por 30 dias em local sombreado
+3. Coar em pano fino antes de aplicar
 
 ## Importante!
 Manter o recipiente sempre tampado para garantir fermentação anaeróbica adequada e evitar contaminação por moscas.

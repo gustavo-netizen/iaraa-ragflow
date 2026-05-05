@@ -1,9 +1,9 @@
 ---
 id: livro_fixture
+tipo: livro_tecnico
 titulo: Livro Fixture para Snapshot
 autores: [João da Silva, Maria de Souza]
 editora: [Embrapa]
-categoria: livro_tecnico
 ano: 2024
 isbn: 978-85-7035-999-9
 tags: []
