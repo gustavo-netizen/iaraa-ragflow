@@ -108,6 +108,29 @@ def _build_default_client() -> QwenClient:
     )
 
 
+def _build_footnotes_sidecar(
+    pdf_name: str,
+    total_pages: int,
+    all_footnotes_by_page: Dict[int, List[str]],
+) -> Dict[str, Any]:
+    """Build the canonical sidecar dict per ADR-0004.
+
+    Empty `all_footnotes_by_page` yields `notes: []` — emissão é incondicional
+    para que a existência do arquivo seja signal não-ambíguo de "doc passou
+    por Stage 1 pós-J.2". Pages ordenadas asc; `id` reinicia em 1 por página.
+    """
+    return {
+        "version": "1.0",
+        "pdf_name": pdf_name,
+        "total_pages": total_pages,
+        "notes": [
+            {"page": page, "id": i, "text": text}
+            for page, fns in sorted(all_footnotes_by_page.items())
+            for i, text in enumerate(fns, 1)
+        ],
+    }
+
+
 async def process_pdf_async(
     pdf_path: Path,
     api_key: str,
@@ -300,6 +323,7 @@ async def process_pdf_async(
         total_tables = 0
         total_formulas = 0
         confidence_scores: List[float] = []
+        all_footnotes_by_page: Dict[int, List[str]] = {}
 
         for result in page_results:
             if not result["success"]:
@@ -373,13 +397,8 @@ async def process_pdf_async(
 
                 all_figures_metadata.extend(result.get("figures_metadata", []))
 
-            if result.get("footnotes"):
-                footnotes = result["footnotes"]
-                if footnotes:
-                    page_content += "---\n\n**Footnotes:**\n\n"
-                    for i, fn in enumerate(footnotes, 1):
-                        page_content += f"[^{i}]: {fn}\n"
-                    page_content += "\n"
+            if footnotes := result.get("footnotes"):
+                all_footnotes_by_page[page_num] = footnotes
 
             markdown_sections.append(page_content)
 
@@ -400,6 +419,8 @@ async def process_pdf_async(
                 f"*Statistics: {total_tables} tables, {total_formulas} formulas, "
                 f"{total_figures} figures*\n\n"
             )
+            if all_footnotes_by_page:
+                f.write("*Footnotes: sidecar*\n\n")
             f.write("---\n\n")
             f.write("\n".join(markdown_sections))
 
@@ -425,6 +446,20 @@ async def process_pdf_async(
                 default_flow_style=False,
             )
         print(f"   ✅ Combined YAML: {combined_yaml_file.name}")
+
+        footnotes_yaml_file = output_dir / f"{pdf_name}.footnotes.yaml"
+        footnotes_doc = _build_footnotes_sidecar(
+            pdf_name, total_pages, all_footnotes_by_page
+        )
+        with open(footnotes_yaml_file, "w", encoding="utf-8") as f:
+            yaml.dump(
+                footnotes_doc,
+                f,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+            )
+        print(f"   ✅ Footnotes YAML: {footnotes_yaml_file.name}")
 
         # Validation report — KQI metrics, page stats, failed-pages detail
         avg_confidence = (
