@@ -11,6 +11,7 @@ Um ADR existe para travar uma decisão que afeta o futuro do código — não pa
 | [0001](0001-id-schema-frontmatter.md) | Schema de ID no frontmatter — slug ASCII + campo `tipo` separado | Accepted |
 | [0002](0002-book-converter-llm-agnostic.md) | `book_converter` é LLM-agnostic — recebe resposta pré-computada | Accepted |
 | [0003](0003-progress-storage-json-filelock.md) | Progress storage permanece JSON + FileLock (não SQLite) | Accepted |
+| [0004](0004-footnotes-sidecar-yaml.md) | Footnotes em sidecar YAML separado (`<name>.footnotes.yaml`) | Accepted |
 
 ## Convenções
 

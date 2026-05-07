@@ -431,6 +431,50 @@ Test renomeado de `..._known_buggy` → `test_apply_page_offset_yaml_refs_in_mar
 
 ---
 
+### Fase J — Footnotes em sidecar YAML ✅ (concluído 2026-05-07)
+
+**Resultado:** Stage 1 deixa de inlinar footnotes no body MD e passa a emitir `<name>.footnotes.yaml` paralelo ao `_all_figures.yaml`. Body MD pós-J.2 fica 100% livre de ruído de footnote; book_converter ganha flag `inline_notes` opcional. Cleanup de J.0 cobre os ~96 livros legacy sem reprocessar Stage 1. Suite 194 passed (155 baseline + 39 das fases J).
+
+#### J.0 — Backward-compat cleanup ✅ — `ebd93ab`
+
+Dois bugs combinados em `processamento/shared/ocr_patterns.py` faziam o cleanup deixar `**Footnotes:**` órfão no body **e** dropar items substantivos (translator notes, DOIs, definições):
+
+1. **Pattern-ordering** — separador genérico (`^---\s*\n(?=\s*\n)`, linha 37) comia o `---` antes do label específico rodar. Mesma classe do bug H.1.
+2. **Filtro indiscriminado** — `^\[\^\d+\]:.*\n` removia TODOS os items.
+
+**Fix:** label permissivo (`^(?:---\s*\n\s*\n)?\*\*Footnotes:\*\*\s*\n`) + `processamento/shared/footnote_filter.py` (`filter_footnote_items`, `is_substantive_footnote` — heurística <5 chars alfabéticos). `clean_all` em book + ficha chama o filter após `remove_artifacts`. Testado nos 4 livros legacy de `final-delivery/`: labels 0%, items substantivos preservados (84→1 em Forbidden-history, 30→30 em pppn70).
+
+#### J.1 — ADR-0004 + schema do sidecar ✅ — `f326a06`
+
+Trava decisão arquitetural antes de tocar Stage 1: sidecar `<name>.footnotes.yaml` paralelo ao `_all_figures.yaml`, schema flat `notes: [{page, id, text}]` espelha `figures: [...]` existente, emissão incondicional (`notes: []` quando vazio), marker `*Footnotes: sidecar*` no metadata header como signal duplicado, callout markers OCR (³⁵, ¹) preservados como glifos tipográficos. Indexado em `docs/adr/README.md` + entrada "Footnote (sidecar)" em `processamento/CONTEXT.md`.
+
+#### J.2 — Stage 1 emite sidecar ✅ — `77169bc`
+
+`conversao/docmind/pipeline.py`: novo helper puro `_build_footnotes_sidecar()`, acumulador `all_footnotes_by_page` durante o page-results loop, marker condicional `*Footnotes: sidecar*` no metadata, write `<pdf_name>.footnotes.yaml` ao lado do `_all_figures.yaml`. Append legacy de `**Footnotes:**` ao body removido (linhas 376-382 → 2 linhas).
+
+**Risk:** Stage 1 não tinha snapshot estabelecido. **Mitigação:** 11 testes em `tests/test_pipeline_footnotes_sidecar.py` em 3 camadas — 5 unit no helper, 4 source-guards, 2 **integração** dirigindo `process_pdf_async` via `asyncio.run` + monkeypatch de `pdf2image.convert_from_path` e `process_single_page_with_context` (primeiros E2E contra Stage 1).
+
+#### J.3 — book_converter consome sidecar ✅ — `3ab73bf`
+
+`convert_book_with_llm` ganha args `footnotes_yaml_path: Path | None = None` e `inline_notes: Literal["none","useful","all"] = "none"`. Defaults preservam backward-compat (snapshot do livro inalterado). Helper `_render_notes_section()` lê sidecar via `yaml.safe_load`, filtra por mode (`useful` reusa `is_substantive_footnote` de J.0), retorna string `## Notas` formatada. Renderização inserida entre Phase 4 (insert headers) e Phase 5 (RAGFlow optimize) — `join_paragraph_lines` aplica nas linhas das notas.
+
+Format ADR-0004: `**¹ (p. 3)** texto` com counter sequencial em superscript unicode. SKILL.md atualizada com flag `-n / --inline-notes` + auto-discovery do sidecar via `input_path.with_suffix(".footnotes.yaml")`.
+
+#### J.4+J.5 — Orchestrator propaga + checker valida ✅ — `25fab78`
+
+**Bundle (per plano):** Step 5 propagation e pairing validation são unidade conceitual — split risca landing J.4 sem validator e J.5 contra moving target.
+
+- **J.4** `orchestrator.py:_step5_final_delivery_copy`: glob `*.footnotes.yaml` análogo ao `_all_figures.yaml`, copia como `<short_name>.footnotes.yaml`. Livros legacy → no-op silencioso.
+- **J.5** `validation/checkers.py:StructureChecker`: pareamento `<stem>.md` ↔ `<stem>.footnotes.yaml`; `_validate_footnote_sidecar()` valida schema canônico (`version`, `pdf_name`, `notes: list`); body-leak detection flagga `**Footnotes:**` literal como warning. Stats novos: `footnote_sidecars`, `body_leaks`. `report.py` ganha 2 linhas condicionais na section 1.
+
+#### J.6 — Wrap-up docs ✅ (este commit)
+
+PLANO marcando Fase J done; CLAUDE.md root/conversao/processamento atualizadas com referências ao sidecar e à flag `inline_notes`. SKILL.md já finalizada em J.3.
+
+**Smoke pré-merge:** `./run.sh --restart` em PDF real ainda recomendado (única validação E2E ao vivo de J.2 — Stage 1 sem snapshot estabelecido). Custa créditos API.
+
+---
+
 ## Verificação end-to-end
 
 **Após cada fase B-G:**
@@ -449,8 +493,9 @@ Test renomeado de `..._known_buggy` → `test_apply_page_offset_yaml_refs_in_mar
 | 3 | C → D | ✅ concluído (2026-05-04) | 4 dias |
 | 4 | E → F.1 + review F.1 | ✅ concluído (2026-05-04) | 3 dias |
 | 5 | F.2 → G → H | F.2 ✅ (2026-05-04); G ✅ (2026-05-05); H ✅ (2026-05-05) | 4 dias |
+| 6 | J (todas) | ✅ concluído (2026-05-07) | ~4.5h |
 
-**Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user.
+**Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user. Sprint 6 (Fase J) entrou ~2 dias após o cierre nominal do refator H, motivada por bugs de footnote vazando em produção.
 
 ## Open questions — RESOLVIDAS (2026-05-04)
 

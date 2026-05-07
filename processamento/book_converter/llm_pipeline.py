@@ -9,6 +9,13 @@ Este módulo orquestra o pipeline completo de conversão:
 5. Montagem final com YAML frontmatter
 """
 
+from pathlib import Path
+from typing import Literal
+
+import yaml
+
+from processamento.shared.footnote_filter import is_substantive_footnote
+
 from .llm_analyzer import (
     build_analysis_prompt,
     parse_llm_response,
@@ -20,6 +27,59 @@ from .models import ChapterBoundary
 import re
 from .ragflow_optimize import optimize_for_ragflow, format_optimize_summary
 from .assembler import assemble_book_document, format_assembly_summary
+
+
+_SUPERSCRIPT_DIGITS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+
+def _to_superscript(n: int) -> str:
+    """Converte inteiro pra dígitos sobrescritos unicode (1 → ¹, 12 → ¹²)."""
+    return "".join(_SUPERSCRIPT_DIGITS[int(d)] for d in str(n))
+
+
+def _render_notes_section(
+    footnotes_yaml_path: Path | None,
+    mode: Literal["none", "useful", "all"],
+) -> str | None:
+    """Renderiza `## Notas` a partir do sidecar YAML emitido por J.2.
+
+    Retorna ``None`` (sem seção) quando:
+    - ``mode == "none"`` (default explícito);
+    - ``footnotes_yaml_path`` é ``None`` ou aponta pra arquivo inexistente
+      (livro legado pré-J.2 — fallback delega ao cleanup de J.0);
+    - sidecar tem ``notes: []`` ou ``mode == "useful"`` filtrou tudo.
+
+    Formato (per ADR-0004):
+        ## Notas
+
+        **¹ (p. 3)** Texto da nota...
+
+        **² (p. 8)** Outra nota...
+    """
+    if mode == "none" or footnotes_yaml_path is None:
+        return None
+    if not footnotes_yaml_path.exists():
+        return None
+
+    data = yaml.safe_load(footnotes_yaml_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None
+    notes = data.get("notes") or []
+
+    if mode == "useful":
+        notes = [n for n in notes if is_substantive_footnote(n.get("text", ""))]
+
+    if not notes:
+        return None
+
+    parts = ["## Notas", ""]
+    for i, note in enumerate(notes, 1):
+        page = note.get("page", "?")
+        text = note.get("text", "")
+        parts.append(f"**{_to_superscript(i)} (p. {page})** {text}")
+        parts.append("")
+
+    return "\n".join(parts)
 
 
 def get_analysis_prompt(content: str, max_lines: int = 500) -> str:
@@ -224,7 +284,9 @@ def convert_book_with_llm(content: str,
                           filename: str,
                           llm_response: str,
                           include_frontmatter: bool = True,
-                          verbose: bool = False) -> tuple[str, str]:
+                          verbose: bool = False,
+                          footnotes_yaml_path: Path | None = None,
+                          inline_notes: Literal["none", "useful", "all"] = "none") -> tuple[str, str]:
     """
     Pipeline completo de conversão usando análise LLM.
 
@@ -234,6 +296,13 @@ def convert_book_with_llm(content: str,
         llm_response: Resposta JSON do LLM com estrutura
         include_frontmatter: Se True, inclui YAML frontmatter
         verbose: Se True, retorna log detalhado
+        footnotes_yaml_path: Path opcional do sidecar `<name>.footnotes.yaml`
+            emitido por J.2. ``None`` para livros legacy pré-J.2 (cleanup
+            de J.0 cuida do label órfão no body).
+        inline_notes: Se renderizar `## Notas` a partir do sidecar.
+            ``"none"`` (default) — body limpo, sidecar fica para outras
+            integrações. ``"useful"`` — filtra ruído via
+            ``is_substantive_footnote``. ``"all"`` — renderiza tudo.
 
     Returns:
         Tupla (documento final, log de processamento)
@@ -299,6 +368,14 @@ def convert_book_with_llm(content: str,
     final_lines = len(content.split('\n'))
 
     log_parts.append(f"Headers inseridos: {len(adjusted_chapters)} (+ fallback patterns)")
+
+    # 4.5 Notas (opcional, sidecar pós-J.2 — ADR-0004)
+    # Renderizar ANTES da Phase 5 para que join_paragraph_lines aplique
+    # nas linhas das notas também.
+    notes_section = _render_notes_section(footnotes_yaml_path, inline_notes)
+    if notes_section:
+        content = content.rstrip() + "\n\n" + notes_section
+        log_parts.append(f"## Notas: appended ({inline_notes} mode)")
 
     # 5. Otimização RAGFlow
     log_parts.append("")

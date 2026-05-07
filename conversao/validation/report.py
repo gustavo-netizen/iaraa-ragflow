@@ -139,6 +139,11 @@ def render_quality_report(
     ])
     if cost is not None:
         lines.append(f"| 预估费用 | ¥{cost.total_cost_cny:.2f} |")
+    footnote_sidecars = structure.get("footnote_sidecars", 0)
+    body_leaks = structure.get("body_leaks", 0)
+    if footnote_sidecars or body_leaks:
+        lines.append(f"| Footnote sidecars | {footnote_sidecars} |")
+        lines.append(f"| Body leaks (legacy) | {body_leaks} |")
     lines.extend(["", "---", ""])
 
     # 2. Quality score

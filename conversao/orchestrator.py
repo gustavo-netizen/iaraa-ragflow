@@ -535,6 +535,15 @@ class Pipeline:
             if yaml_file is not None:
                 shutil.copy2(yaml_file, self.final_delivery_dir / f"{short_name}.yaml")
                 print(f"  ✅ {short_name}.yaml")
+            footnotes_file = next(
+                iter(sorted(pdf_dir.glob("*.footnotes.yaml"))), None
+            )
+            if footnotes_file is not None:
+                shutil.copy2(
+                    footnotes_file,
+                    self.final_delivery_dir / f"{short_name}.footnotes.yaml",
+                )
+                print(f"  ✅ {short_name}.footnotes.yaml")
         print(f"\nFinal delivery: {self.final_delivery_dir}\n")
         return 0
 

@@ -44,6 +44,22 @@ Bloco YAML delimitado por `---` no topo do Markdown final, com metadados estrutu
 
 Schema canônico do `id` definido em [ADR-0001](../docs/adr/0001-id-schema-frontmatter.md). Campo `tipo` ∈ `{ficha_agroecologica, livro_tecnico}`.
 
+### Footnote (sidecar)
+Arquivo `<name>.footnotes.yaml` emitido pelo Stage 1 ao lado do `<name>.md` e do `<name>_all_figures.yaml`. A partir de J.2, footnotes deixam de ser inlinadas no body MD e passam a viver aqui. Schema canônico travado por [ADR-0004](../docs/adr/0004-footnotes-sidecar-yaml.md):
+
+```yaml
+version: "1.0"
+pdf_name: Darnton.cultura.civilidade
+total_pages: 10
+notes:
+  - {page: 3, id: 1, text: "³⁵"}
+  - {page: 8, id: 1, text: "*Tournois refere-se à livre tournois..."}
+```
+
+Lista flat (espelha `_all_figures.yaml:figures`); emissão incondicional (`notes: []` quando vazio); marker `*Footnotes: sidecar*` no metadata header do MD como signal redundante.
+
+**Não confundir com:** *callout markers* — os superscritos `³⁵`, `¹` que aparecem inline no body são glifos tipográficos extraídos pelo OCR, não markers Markdown `[^N]`. Permanecem no body para casamento visual com `text` dos items do sidecar.
+
 ### Document (Stage 1)
 Conceito introduzido na Fase E do refator: representa **um PDF** do Stage 1 com seus chunks (sentido 1), pages, YAML de metadados e estado de progresso. Tipo Python a ser criado em `conversao/docmind/document.py`.
 
@@ -74,3 +90,4 @@ Remove metadados de OCR / processamento que vazam para o Markdown (carimbos do D
 - [ADR-0001](../docs/adr/0001-id-schema-frontmatter.md) — Schema do campo `id` e introdução do campo `tipo`.
 - [ADR-0002](../docs/adr/0002-book-converter-llm-agnostic.md) — `book_converter` não importa SDK de LLM.
 - [ADR-0003](../docs/adr/0003-progress-storage-json-filelock.md) — Progress permanece JSON+FileLock.
+- [ADR-0004](../docs/adr/0004-footnotes-sidecar-yaml.md) — Footnotes em sidecar YAML (`<name>.footnotes.yaml`).

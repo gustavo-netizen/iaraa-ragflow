@@ -26,6 +26,11 @@ from .ocr_patterns import (
     FICHA_EXTRA_PATTERNS,
     remove_artifacts,
 )
+from .footnote_filter import (
+    is_footnote_noise,
+    is_substantive_footnote,
+    filter_footnote_items,
+)
 
 __all__ = [
     "ACCENT_MAP",
@@ -41,4 +46,7 @@ __all__ = [
     "CLEANUP_PATTERNS",
     "FICHA_EXTRA_PATTERNS",
     "remove_artifacts",
+    "is_footnote_noise",
+    "is_substantive_footnote",
+    "filter_footnote_items",
 ]
