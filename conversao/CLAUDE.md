@@ -181,12 +181,26 @@ Step 8: final_delivery_check.py → validation/ (Fase F)
 
 ```
 output/{pdf_name}/
-├── {pdf_name}.md              # Main markdown output
+├── {pdf_name}.md              # Main markdown output (sem `**Footnotes:**` pós-J.2)
 ├── {pdf_name}_all_figures.yaml # Combined figure metadata (consumed by ficha_converter Phase 4.5)
+├── {pdf_name}.footnotes.yaml   # Footnotes sidecar (Fase J/ADR-0004); incondicional (notes: [] quando vazio)
 ├── {pdf_name}.validation.yaml  # Quality metrics
 ├── images/                     # Page PNGs
 └── yaml_metadata/              # Per-figure YAML files
 ```
+
+`<pdf_name>.footnotes.yaml` schema flat (espelha `_all_figures.yaml:figures`):
+
+```yaml
+version: "1.0"
+pdf_name: <name>
+total_pages: 10
+notes:
+  - {page: 3, id: 1, text: "³⁵"}
+  - {page: 8, id: 1, text: "*Tournois refere-se à livre tournois*"}
+```
+
+Quando o sidecar existe e tem notes, o metadata header do MD ganha um marker `*Footnotes: sidecar*` (signal redundante caso o `.md` se separe do `.yaml`).
 
 ### API Configuration
 

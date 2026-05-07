@@ -121,7 +121,27 @@ document, log = convert_book_with_llm(
     content=content,
     filename="livro.md",
     llm_response=llm_response,
+    # Opcionais (Fase J / ADR-0004):
+    footnotes_yaml_path=Path("livro.footnotes.yaml"),  # auto-discover via input_path.with_suffix
+    inline_notes="useful",                              # default "none" — body limpo
 )
+```
+
+**Footnotes (Fase J / ADR-0004):** quando o sidecar `<name>.footnotes.yaml` (emitido por Stage 1 pós-J.2) está presente, `book_converter` opcionalmente renderiza uma seção `## Notas` no documento final. Modos:
+
+- `none` (default) — sidecar ignorado, body fica limpo. Sidecar fica para outras integrações.
+- `useful` — filtra ruído via `processamento.shared.footnote_filter.is_substantive_footnote` (heurística <5 chars alfabéticos = drop). Recomendado para `/convert-book` interativo.
+- `all` — renderiza todos os items, ruído incluído.
+
+Livros legacy (pré-J.2) sem sidecar → no-op gracioso. O cleanup de J.0 (`processamento/shared/ocr_patterns.py` + `filter_footnote_items`) cuida do label órfão `**Footnotes:**` no body.
+
+Format renderizado:
+```markdown
+## Notas
+
+**¹ (p. 3)** Texto da nota...
+
+**² (p. 8)** Outra nota...
 ```
 
 **LLM response schema** (driver must produce this JSON):
@@ -203,6 +223,7 @@ Locked decisions in `../docs/adr/`. Don't reopen without registering a new ADR.
 
 - **[ADR-0001](../docs/adr/0001-id-schema-frontmatter.md)** — `id` schema (pure ASCII slug, no `tipo_` prefix) + `tipo` as closed vocabulary (`ficha_agroecologica | livro_tecnico`).
 - **[ADR-0002](../docs/adr/0002-book-converter-llm-agnostic.md)** — `book_converter` is LLM-agnostic; never imports an LLM SDK.
+- **[ADR-0004](../docs/adr/0004-footnotes-sidecar-yaml.md)** — Footnotes em sidecar YAML separado (`<name>.footnotes.yaml`); body MD pós-J.2 sem ruído; `inline_notes` flag controla render opcional de `## Notas`.
 - **[ADR-0003](../docs/adr/0003-progress-storage-json-filelock.md)** — Stage 1 progress storage stays JSON + FileLock.
 
 ## RAGFlow Integration
