@@ -157,7 +157,7 @@ Step 4: Merge Results
 └── Adjust page numbers automatically
 
 Step 5: Final Delivery
-└── Clean output: BookName.md + BookName.yaml
+└── Clean output: BookName.md + BookName.yaml + BookName.footnotes.yaml
 ```
 
 ## Command Line Options
@@ -181,8 +181,9 @@ Environment:
 ## Output Format
 
 Each PDF generates:
-- `*.md` - Markdown content with page markers (`<!-- Page X -->`)
-- `*.yaml` - Figure/chart metadata
+- `*.md` — Markdown content with page markers (`<!-- Page X -->`)
+- `*_all_figures.yaml` — Figure/chart metadata
+- `*.footnotes.yaml` — Footnotes sidecar (Fase J / [ADR-0004](../docs/adr/0004-footnotes-sidecar-yaml.md)). Schema flat `notes: [{page, id, text}]`; emissão incondicional (`notes: []` quando vazio). Body MD pós-J.2 não contém mais blocos `**Footnotes:**`; o metadata header ganha um marker `*Footnotes: sidecar*` quando há notes. `book_converter` opcionalmente renderiza `## Notas` via flag `inline_notes` (`none`/`useful`/`all`).
 
 ## API Requirements
 
