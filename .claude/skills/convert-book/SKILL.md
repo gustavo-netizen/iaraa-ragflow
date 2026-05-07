@@ -11,13 +11,19 @@ Converte livros em Markdown (gerados por OCR via DocMind/Marco Converter) para f
 ## Uso
 
 ```
-/convert-book <input.md> [-o <output.md>] [-v]
+/convert-book <input.md> [-o <output.md>] [-v] [-n {none|useful|all}]
 ```
 
 **Argumentos:**
 - `<input.md>` - Caminho do arquivo MD de entrada (obrigatório)
 - `-o <output.md>` - Caminho do arquivo de saída (opcional, default: `Processado_<input>.md`)
 - `-v` - Modo verbose (mostra log detalhado)
+- `-n / --inline-notes` - Renderizar `## Notas` a partir do sidecar `<input>.footnotes.yaml` emitido por Stage 1 (pós-J.2). Modos:
+  - `none` (default) — body limpo, sidecar fica para outras integrações
+  - `useful` — filtra ruído (heurística `is_substantive_footnote`: ≥5 chars alfabéticos)
+  - `all` — renderiza todos os items do sidecar
+
+O driver auto-descobre `<stem>.footnotes.yaml` no mesmo diretório do input. Livros legacy pré-J.2 não têm sidecar — `inline_notes` vira no-op gracioso e o cleanup de J.0 já elimina o label órfão `**Footnotes:**` do body.
 
 ## Pipeline de Conversão
 
@@ -121,16 +127,22 @@ O prompt solicita extração de:
 ### Passo 3: Executar pipeline de conversão
 
 ```python
+from pathlib import Path
 from processamento.book_converter.llm_pipeline import convert_book_with_llm
+
+# Auto-discover sidecar pós-J.2 (livros legacy não têm — vira no-op).
+sidecar_path = input_path.with_suffix(".footnotes.yaml")
+sidecar = sidecar_path if sidecar_path.exists() else None
 
 # llm_response é o JSON que você gerou no passo anterior
 document, log = convert_book_with_llm(
     content=content,
     filename=filename,
     llm_response=llm_response,
-    chunk_level=2,
     include_frontmatter=True,
-    verbose=True
+    verbose=True,
+    footnotes_yaml_path=sidecar,
+    inline_notes=inline_notes,  # do arg -n (default "none")
 )
 ```
 
