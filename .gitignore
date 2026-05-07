@@ -221,5 +221,6 @@ progress.json.lock
 # Out-of-scope planning notes (kept local until promoted to PLANO_REFATORACAO.md)
 footnote_plan.md
 
-# Local skills cache (skills are versioned via .claude/skills/ + skills-lock.json)
-.agents/
+# Local skills cache — keep .agents/skills/ tracked (symlinks in .claude/skills/ point here)
+.agents/*
+!.agents/skills/
