@@ -89,6 +89,11 @@ class StructureChecker(Checker):
 
     Optionally enforces ``expected_count`` (default off). Pairs every ``*.md``
     against ``{stem}.yaml`` in the same directory.
+
+    J.5: também valida pareamento ``{stem}.md`` ↔ ``{stem}.footnotes.yaml``
+    (sidecar emitido por Stage 1 pós-J.2) e flagga body-leaks de
+    ``**Footnotes:**`` literal — deveria ter sido removido pelo cleanup
+    de J.0.
     """
 
     name = "structure"
@@ -124,7 +129,55 @@ class StructureChecker(Checker):
 
         result.stats["missing_yaml"] = missing_yaml
         result.stats["yaml_count"] = len(md_files) - missing_yaml
+
+        # J.5: footnote sidecar pairing + body-leak detection
+        footnote_sidecars = 0
+        body_leaks = 0
+        for md_file in md_files:
+            sidecar = target / f"{md_file.stem}.footnotes.yaml"
+            if sidecar.exists():
+                footnote_sidecars += 1
+                self._validate_footnote_sidecar(sidecar, md_file.stem, result)
+
+            try:
+                body = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "**Footnotes:**" in body:
+                body_leaks += 1
+                result.add_warning(
+                    md_file.stem,
+                    f"Body contains literal **Footnotes:** label "
+                    f"(legacy leak — re-run Stage 2 cleanup post-J.0)",
+                )
+
+        result.stats["footnote_sidecars"] = footnote_sidecars
+        result.stats["body_leaks"] = body_leaks
         return result
+
+    @staticmethod
+    def _validate_footnote_sidecar(
+        sidecar: Path, stem: str, result: CheckResult
+    ) -> None:
+        """Schema canônico ADR-0004: dict com `version`, `pdf_name`, `notes: list`."""
+        try:
+            data = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+        except yaml.YAMLError as e:
+            result.add_issue(stem, f"{sidecar.name}: invalid YAML — {e}")
+            return
+        except Exception as e:
+            result.add_issue(stem, f"{sidecar.name}: cannot read — {e}")
+            return
+
+        if not isinstance(data, dict):
+            result.add_issue(stem, f"{sidecar.name}: not a YAML mapping")
+            return
+        if "version" not in data:
+            result.add_issue(stem, f"{sidecar.name}: missing 'version' field")
+        if "pdf_name" not in data:
+            result.add_issue(stem, f"{sidecar.name}: missing 'pdf_name' field")
+        if not isinstance(data.get("notes"), list):
+            result.add_issue(stem, f"{sidecar.name}: 'notes' is not a list")
 
 
 # ===================================================== ContentSyntaxChecker

@@ -404,6 +404,42 @@ def test_step5_falls_back_to_non_validation_yaml(root: Path):
     assert delivery_yaml == "k: v"
 
 
+def test_step5_copies_footnotes_sidecar(root: Path):
+    """J.4: <pdf>.footnotes.yaml viaja com .md como <short_name>.footnotes.yaml."""
+    pdf_dir = root / "output" / "Darnton.cultura.civilidade"
+    pdf_dir.mkdir()
+    (pdf_dir / "Darnton.cultura.civilidade.md").write_text("# x", encoding="utf-8")
+    (pdf_dir / "Darnton.cultura.civilidade_all_figures.yaml").write_text("k: v", encoding="utf-8")
+    (pdf_dir / "Darnton.cultura.civilidade.footnotes.yaml").write_text(
+        "version: '1.0'\nnotes: []\n", encoding="utf-8"
+    )
+
+    pipeline = Pipeline.from_env(root)
+    pipeline._step5_final_delivery_copy()
+
+    delivery = root / "final-delivery"
+    assert (delivery / "Darntonculturacivilidade.md").exists()
+    assert (delivery / "Darntonculturacivilidade.yaml").exists()
+    assert (delivery / "Darntonculturacivilidade.footnotes.yaml").exists()
+
+
+def test_step5_no_sidecar_skipped_silently(root: Path):
+    """Livro legacy sem sidecar: step5 não falha, simplesmente não copia."""
+    pdf_dir = root / "output" / "legacy_doc"
+    pdf_dir.mkdir()
+    (pdf_dir / "legacy_doc.md").write_text("# x", encoding="utf-8")
+    (pdf_dir / "legacy_doc_all_figures.yaml").write_text("k: v", encoding="utf-8")
+    # No footnotes.yaml
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline._step5_final_delivery_copy()
+    assert rc == 0
+
+    delivery = root / "final-delivery"
+    assert (delivery / "legacydoc.md").exists()
+    assert not (delivery / "legacydoc.footnotes.yaml").exists()
+
+
 # --------------------- full run() with subprocess patched ----------------
 
 

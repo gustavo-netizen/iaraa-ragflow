@@ -73,7 +73,89 @@ def test_structure_checker_handles_missing_directory(tmp_path):
     target = tmp_path / "does-not-exist"
     result = StructureChecker().run(target)
     assert not result.passed
-    assert result.stats["md_count"] == 0
+
+
+# ---------------- J.5: footnote sidecar pairing + body-leak detection -------
+
+
+def _write_sidecar(path: Path, **overrides) -> None:
+    """Helper: escreve sidecar canônico com overrides opcionais por campo."""
+    import yaml as _yaml
+
+    doc = {"version": "1.0", "pdf_name": path.stem.split(".")[0],
+           "total_pages": 1, "notes": []}
+    doc.update(overrides)
+    path.write_text(_yaml.dump(doc, allow_unicode=True), encoding="utf-8")
+
+
+def test_structure_checker_passes_with_valid_sidecar_pairing(tmp_path: Path) -> None:
+    """MD + YAML + footnotes.yaml válido: passa, conta o sidecar, sem leak."""
+    _seed_delivery(tmp_path, ["A"])
+    _write_sidecar(tmp_path / "A.footnotes.yaml")
+
+    result = StructureChecker().run(tmp_path)
+    assert result.passed
+    assert result.stats["footnote_sidecars"] == 1
+    assert result.stats["body_leaks"] == 0
+
+
+def test_structure_checker_warns_on_body_leak(tmp_path: Path) -> None:
+    """Body com `**Footnotes:**` literal vira warning (legacy não cleaned)."""
+    _seed_delivery(tmp_path, ["A"])
+    (tmp_path / "A.md").write_text(
+        "# A\n\n## Page 1\n\nBody\n\n---\n\n**Footnotes:**\n\n[^1]: x\n",
+        encoding="utf-8",
+    )
+
+    result = StructureChecker().run(tmp_path)
+    # warning, não issue → ainda pode passar
+    assert result.stats["body_leaks"] == 1
+    assert any("**Footnotes:**" in w["message"] for w in result.warnings)
+
+
+def test_structure_checker_validates_sidecar_schema_missing_keys(tmp_path: Path) -> None:
+    """Sidecar sem `version` ou `pdf_name` vira issue (não warning)."""
+    _seed_delivery(tmp_path, ["A"])
+    (tmp_path / "A.footnotes.yaml").write_text("notes: []\n", encoding="utf-8")
+
+    result = StructureChecker().run(tmp_path)
+    assert not result.passed
+    messages = [i["message"] for i in result.issues]
+    assert any("missing 'version'" in m for m in messages)
+    assert any("missing 'pdf_name'" in m for m in messages)
+
+
+def test_structure_checker_validates_sidecar_schema_notes_not_list(tmp_path: Path) -> None:
+    """`notes` deve ser lista (mesmo vazia); dict ou string vira issue."""
+    _seed_delivery(tmp_path, ["A"])
+    _write_sidecar(tmp_path / "A.footnotes.yaml", notes={"page1": ["x"]})  # dict, errado
+
+    result = StructureChecker().run(tmp_path)
+    assert not result.passed
+    assert any("'notes' is not a list" in i["message"] for i in result.issues)
+
+
+def test_structure_checker_handles_malformed_sidecar_yaml(tmp_path: Path) -> None:
+    """YAML inválido vira issue específica."""
+    _seed_delivery(tmp_path, ["A"])
+    (tmp_path / "A.footnotes.yaml").write_text(
+        "version: '1.0'\nnotes:\n  - {page: 1, id:\n", encoding="utf-8"
+    )
+
+    result = StructureChecker().run(tmp_path)
+    assert not result.passed
+    assert any("invalid YAML" in i["message"] for i in result.issues)
+
+
+def test_structure_checker_no_sidecar_no_op(tmp_path: Path) -> None:
+    """Livros legacy sem sidecar: stat=0, sem issue."""
+    _seed_delivery(tmp_path, ["A", "B"])
+
+    result = StructureChecker().run(tmp_path)
+    assert result.passed
+    assert result.stats["footnote_sidecars"] == 0
+    assert result.stats["body_leaks"] == 0
+    assert result.stats["md_count"] == 2
 
 
 # -------------------------------------------------------- ContentSyntaxChecker
