@@ -181,6 +181,7 @@ __marimo__/
 **/output/
 **/final-delivery/
 **/final_delivery/
+**/ragflow-ready/
 **/input/*.pdf
 **/input/split_pdfs/
 **/input/direct_pdfs/
@@ -213,3 +214,13 @@ progress.json.lock
 **/reports/
 **/monitor/
 **/PRD/
+
+# KDE/Dolphin metadata
+.directory
+
+# Out-of-scope planning notes (kept local until promoted to PLANO_REFATORACAO.md)
+footnote_plan.md
+
+# Local skills cache — keep .agents/skills/ tracked (symlinks in .claude/skills/ point here)
+.agents/*
+!.agents/skills/

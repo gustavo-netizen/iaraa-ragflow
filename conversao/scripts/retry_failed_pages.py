@@ -28,10 +28,14 @@ from io import BytesIO
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from config import AppConfig
+
+APP_CONFIG = AppConfig.from_env()
+
 # Try to import from docmind_converter
 try:
     from docmind_converter import (
-        DEFAULT_MODEL, DEFAULT_CONTEXT_MODE, DEFAULT_PROMPT_MODE,
+        DEFAULT_CONTEXT_MODE, DEFAULT_PROMPT_MODE,
         DEFAULT_RETRY_CONFIG, ContextMode, PromptMode,
         build_context_window, build_prompt, safe_get_text_from_response,
         APIKeyHealthMonitor, _api_key_monitor
@@ -39,7 +43,11 @@ try:
     DOCMIND_AVAILABLE = True
 except ImportError:
     DOCMIND_AVAILABLE = False
-    DEFAULT_MODEL = "qwen-vl-max-latest"
+
+# Phase 3 LLM model — see ADR-0001 / Phase C. Default lives in AppConfig
+# (env var DOCMIND_LLM_MODEL overrides). Kept as module name for backwards
+# compat with --model CLI default.
+DEFAULT_MODEL = APP_CONFIG.llm_model
 
 # ============ Configuration ============
 

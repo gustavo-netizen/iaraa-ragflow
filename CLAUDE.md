@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Stage 2 — `processamento/`:** Post-processes the OCR-generated Markdown to be RAGFlow-ready: cleans artifacts, extracts metadata, generates YAML frontmatter, restructures content with `##`/`###` headers.
 
+The codebase is in active refactoring — see `PLANO_REFATORACAO.md` for the current sprint and `docs/adr/` for locked architectural decisions.
+
 ## Architecture
 
 ```
@@ -17,26 +19,35 @@ PDF ──► conversao/ (DocMind)     ──► Raw Markdown + YAML
         Qwen-VL OCR + LLM            per-page extraction
 
     ──► processamento/           ──► RAGFlow-optimized Markdown
-        ficha_converter/              YAML frontmatter + ##/### headers
-        book_converter/ (skill)
+        ficha_converter/  (regex)     YAML frontmatter + ##/### headers
+        book_converter/   (LLM)
+        shared/                       (canonical generate_id, join_paragraph_lines, …)
 ```
 
 ### conversao/ — PDF to Markdown (DocMind)
 
-Orchestrated by `run.sh`. Pipeline: split large PDFs → OCR (qwen-vl-plus) → LLM extraction (qwen-vl-max) → merge chunks → post-process → quality report.
+Orchestrated by `run.sh`. Pipeline: split large PDFs → OCR (qwen-vl-plus) → LLM extraction (qwen-vl-max) → retry failed pages → merge chunks → post-process → quality report → final delivery check.
 
-Key design: 3-page context window for cross-page references, multi-API-key load balancing with health monitoring, page-level checkpoint/resume.
+Key design: 3-page context window for cross-page references, multi-API-key load balancing with health monitoring, page-level checkpoint/resume in `progress.json` + filelock.
 
-See `conversao/CLAUDE.md` for detailed commands and architecture.
+**Module layout** (post-refactor):
+- `conversao/orchestrator.py` (Fase G) — single-file Python entry-point with `Pipeline.status()` and `Pipeline.run()` (Steps 1–9 via subprocess + tee streaming). CLI: `python orchestrator.py {status,run} [...]`. `run.sh` is now a thin shell wrapper around it.
+- `conversao/docmind/` (Fase D) — `retry.py`, `api_key_pool.py`, `qwen_client.py`, `page_processor.py`, `pipeline.py`, `document.py` (Stage-1 dataclass per PDF + chunks, with `discover()` / `is_complete()` / `failed_pages()` / `apply_page_offset()`).
+- `conversao/scripts/` — pipeline scripts at top level (`docmind_converter.py` is now a thin shim re-exporting `docmind.*`); utilities under `scripts/admin/`.
+- `conversao/validation/` (Fase F) — pluggable `Checker`s (`StructureChecker`, `ContentSyntaxChecker`, `MarkdownChecker`, `QualityChecker`, `ElementChecker`, `MarcoChecker`) + `cost.py` + `report.py`. Consumed by `final_delivery_check.py` and `generate_quality_report.py` shims.
+- `conversao/scripts/config.py` — `AppConfig` (frozen dataclass, `from_env()`); env vars `DOCMIND_OCR_MODEL`, `DOCMIND_LLM_MODEL`, `DOCMIND_RETRY_*`, `DOCMIND_HEALTH_*`, `DOCMIND_REQUEST_TIMEOUT`.
+
+See `conversao/CLAUDE.md` for detailed commands and the legacy architecture description.
 
 ### processamento/ — Markdown optimization for RAGFlow
 
-Two converters for two document types:
+Two converters for two document types, sharing canonical helpers under `processamento/shared/`:
 
 - **`ficha_converter/`** — Regex-based 6-phase pipeline for Fichas Agroecológicas. Run with `python -m ficha_converter`.
-- **`book_converter/`** (at root `.claude/skills/convert-book/`) — LLM-powered 6-phase pipeline for full books. Invoked via `/convert-book` skill.
+- **`book_converter/`** — LLM-powered 6-phase pipeline for full books. Invoked via `/convert-book` skill (the skill is defined at `.claude/skills/convert-book/SKILL.md` but the package itself lives at `processamento/book_converter/` and is imported as `from processamento.book_converter import ...`). LLM-agnostic by ADR-0002 — the package never imports an LLM SDK; it receives `llm_response: str` from the skill driver.
+- **`shared/`** (Fase B) — `yaml_writer.py` (canonical `generate_id`, `transliterate`, `format_authors_display`, YAML formatters), `ragflow.py` (`join_paragraph_lines`, `format_bullets`, `optimize_for_ragflow`), `ocr_patterns.py` (`CLEANUP_PATTERNS` superset + `remove_artifacts`).
 
-See `processamento/CLAUDE.md` for detailed commands, pipeline phases, and LLM response format.
+See `processamento/CLAUDE.md` for detailed commands, pipeline phases, and LLM response format. See `processamento/CONTEXT.md` for the domain vocabulary (chunk sense 1 = PDF slice vs sense 2 = RAGFlow chunk; Stage 1 vs Marco Converter; PT/EN naming convention).
 
 ### RAGFlow Integration
 
@@ -69,9 +80,22 @@ python -m ficha_converter "MD/MD systemRAG/" -o "MD/converted/" --batch -v
 /convert-book <input.md> [-o <output.md>] [-v]
 ```
 
+### Tests (root)
+
+```bash
+pytest tests/                       # Full suite (155 passed, 0 xfail)
+pytest tests/test_snapshot.py       # Stage-2 goldens (ficha + livro)
+UPDATE_GOLDENS=1 pytest tests/test_snapshot.py   # Re-baseline after intentional changes
+```
+
+After every structural change in Fases B–G, `pytest tests/` must pass before commit. Goldens are re-baselined only with an explicit justification in the commit message.
+
 ## Key Patterns
 
 - **API keys** (conversao): Priority is `api/keys.txt` > `.env` > env vars. Python scripts only read env vars; `run.sh` converts `keys.txt` to env vars automatically.
-- **Output format**: Each document gets YAML frontmatter (`---` delimited) + Markdown body with `##`/`###` headers (recognized natively by RAGFlow as chunk delimiters).
-- **`join_paragraph_lines()`**: Joins lines starting with lowercase or `(`/`[` (OCR continuation). Preserves blank lines, headers, list items, and lines starting with uppercase.
-- **`config.py`** (processamento): Centralizes editable regex patterns (`CLEANUP_PATTERNS`, `SECTION_PATTERNS`, `TAG_KEYWORDS`) for the ficha_converter pipeline.
+- **Output format**: Each document gets YAML frontmatter (`---` delimited) + Markdown body with `##`/`###` headers. Frontmatter carries `tipo: ficha_agroecologica | livro_tecnico` (closed vocabulary, ADR-0001) and `id` as a pure ASCII slug — no `tipo_` prefix.
+- **`generate_id`**: single canonical implementation in `processamento/shared/yaml_writer.py`. Transliterates accents via `ACCENT_MAP` (`café → cafe`). Imported by both ficha and book converters — never re-implement locally.
+- **`join_paragraph_lines()`**: Joins lines starting with lowercase or `(`/`[` (OCR continuation). Preserves blank lines, headers, list items, and lines starting with uppercase. Canonical implementation in `processamento/shared/ragflow.py`.
+- **`config.py`** (`processamento/ficha_converter/`): only ficha-specific patterns (`SECTION_PATTERNS`, `SUBSECTION_PATTERNS`, `TAG_KEYWORDS`). `CLEANUP_PATTERNS` and `ACCENT_MAP` live in `processamento/shared/` and are used by both converters.
+- **ADRs** in `docs/adr/`: ADR-0001 (id schema + `tipo`), ADR-0002 (book_converter LLM-agnostic), ADR-0003 (progress storage stays JSON+FileLock). Don't reopen without registering a new ADR.
+- **Refactor status**: `PLANO_REFATORACAO.md` tracks phases. **Fases 0–H all done** on branch `refactor/fase-d-split-docmind` (suite 155 passed, zero xfail). `conversao/orchestrator.py` is the Python entry-point; `run.sh` (198 lines) handles only env loading, monitor daemon, and the `--history` shortcut, then delegates to `python orchestrator.py run [...]`. Live end-to-end smoke (`./run.sh --restart` with real PDFs + API keys) is the only remaining pre-merge gate. Production re-processing of the ~96 books for the H.1 chapter-title fix is a product decision (out of refactor scope).
