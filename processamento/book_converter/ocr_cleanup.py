@@ -13,6 +13,7 @@ from processamento.shared.ocr_patterns import (
     CLEANUP_PATTERNS,
     remove_artifacts as _remove_artifacts_shared,
 )
+from processamento.shared.footnote_filter import filter_footnote_items
 
 
 def remove_figure_descriptions(content: str) -> str:
@@ -213,12 +214,13 @@ def clean_all(content: str, book_title: str | None = None) -> str:
 
     Ordem:
     1. Remove artefatos do Marco Converter
-    2. Remove descrições de figuras (blocos **Type:**...*Confidence:*)
-    3. Remove rodapés de página (título + número)
-    4. Remove cabeçalhos de página espaçados
-    5. Remove cabeçalhos/rodapés com título do livro (se título fornecido)
-    6. Corrige hifenização quebrada
-    7. Remove linhas vazias excessivas
+    2. Filtra items de footnote ruidosos (preserva translator notes/DOIs)
+    3. Remove descrições de figuras (blocos **Type:**...*Confidence:*)
+    4. Remove rodapés de página (título + número)
+    5. Remove cabeçalhos de página espaçados
+    6. Remove cabeçalhos/rodapés com título do livro (se título fornecido)
+    7. Corrige hifenização quebrada
+    8. Remove linhas vazias excessivas
 
     Args:
         content: Conteúdo do livro
@@ -228,6 +230,7 @@ def clean_all(content: str, book_title: str | None = None) -> str:
         Conteúdo limpo
     """
     content = remove_artifacts(content)
+    content = filter_footnote_items(content)
     content = remove_figure_descriptions(content)
     content = remove_page_footers(content)
     content = clean_page_headers(content)

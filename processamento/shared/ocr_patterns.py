@@ -83,8 +83,14 @@ CLEANUP_PATTERNS: list[tuple[str, str]] = [
     (r'^\*YAML Metadata:.*?\*\s*\n', ''),
 
     # === FOOTNOTES ===
-    (r'^---\s*\n\*\*Footnotes:\*\*\s*\n', ''),
-    (r'^\[\^\d+\]:.*\n', ''),
+    # Pattern permissivo: o separador `---` à frente já costuma ser comido pelo
+    # pattern genérico de SEPARADORES (linha 37) antes deste rodar, deixando o
+    # label órfão. O grupo opcional cobre o caso em que o separador chega aqui
+    # ainda intacto. Items `[^N]:` viram filtragem heurística em
+    # `processamento/shared/footnote_filter.py:filter_footnote_items` —
+    # preserva translator notes / definições / DOIs que pattern indiscriminado
+    # apagava.
+    (r'^(?:---\s*\n\s*\n)?\*\*Footnotes:\*\*\s*\n', ''),
 
     # === OUTROS ===
     (r'-{4,}', ' — '),

@@ -89,3 +89,15 @@ def test_llm_response_fixture_is_valid_json() -> None:
     assert "capitulos" in data
     assert "remover" in data
     assert isinstance(data["capitulos"], list) and len(data["capitulos"]) >= 1
+
+
+def test_legacy_footnote_cleanup_matches_golden() -> None:
+    """J.0: cleanup de livro legacy preserva substantivos e elimina label órfão."""
+    from processamento.book_converter.ocr_cleanup import clean_all
+
+    fixture = FIXTURES / "livro_legacy_footnotes.md"
+    content = fixture.read_text(encoding="utf-8")
+
+    actual = clean_all(content)
+
+    _assert_or_update(actual, GOLDEN / "livro_legacy_footnotes.md", "livro_legacy_footnotes")

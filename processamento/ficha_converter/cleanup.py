@@ -13,6 +13,7 @@ from processamento.shared.ocr_patterns import (
     FICHA_EXTRA_PATTERNS,
     remove_artifacts as _remove_artifacts_shared,
 )
+from processamento.shared.footnote_filter import filter_footnote_items
 from processamento.shared.ragflow import join_paragraph_lines
 
 
@@ -66,8 +67,10 @@ def normalize_punctuation(content: str) -> str:
 
 
 def clean_all(content: str) -> str:
-    """Fase 1 completa: remove artefatos OCR."""
-    return remove_artifacts(content)
+    """Fase 1 completa: remove artefatos OCR + filtra footnote items."""
+    content = remove_artifacts(content)
+    content = filter_footnote_items(content)
+    return content
 
 
 def optimize_for_ragflow(content: str) -> str:
