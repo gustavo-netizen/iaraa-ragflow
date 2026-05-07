@@ -83,7 +83,7 @@ python -m ficha_converter "MD/MD systemRAG/" -o "MD/converted/" --batch -v
 ### Tests (root)
 
 ```bash
-pytest tests/                       # Full suite (155 passed, 0 xfail)
+pytest tests/                       # Full suite (194 passed, 0 xfail)
 pytest tests/test_snapshot.py       # Stage-2 goldens (ficha + livro)
 UPDATE_GOLDENS=1 pytest tests/test_snapshot.py   # Re-baseline after intentional changes
 ```

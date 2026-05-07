@@ -228,7 +228,7 @@ See `docs/MARCO_QUALITY_SPECIFICATION.md` for the full schema. The `MarcoChecker
 Tests live at the repo root in `tests/` (not in `conversao/`).
 
 ```bash
-pytest tests/                          # Full suite (155 passed, 0 xfail)
+pytest tests/                          # Full suite (194 passed, 0 xfail)
 pytest tests/test_orchestrator_run.py  # Pipeline.run() unit tests
 pytest tests/test_orchestrator_status.py
 pytest tests/test_document.py          # Document dataclass (Fase E)

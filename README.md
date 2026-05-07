@@ -59,15 +59,19 @@ Pós-processa o Markdown gerado pelo OCR para ficar pronto para o RAGFlow.
 2. Remoção de seções (frontmatter, sumário, referências, figuras)
 3. Limpeza de artefatos OCR
 4. Inserção de headers `##` por busca de título + fallback ALL CAPS
+4.5. (opcional, Fase J) Renderização de `## Notas` a partir do sidecar `<name>.footnotes.yaml`
 5. Otimização RAGFlow (join linhas, bullets, espaçamento)
 6. Montagem final com YAML frontmatter
 
 O pacote `book_converter` é **LLM-agnóstico** (ADR-0002): nunca importa SDK de LLM — recebe `llm_response: str` do driver da skill `/convert-book`.
 
+**Footnotes (Fase J / ADR-0004):** Stage 1 emite `<pdf_name>.footnotes.yaml` ao lado do `_all_figures.yaml`. Body MD pós-J.2 não contém mais blocos `**Footnotes:**`. `book_converter.convert_book_with_llm` aceita `footnotes_yaml_path` + `inline_notes: "none"|"useful"|"all"` (default `"none"` — body limpo). A heurística `is_substantive_footnote` (`<5` chars alfabéticos = ruído) mora em `processamento/shared/footnote_filter.py` e é reusada pelo cleanup de J.0 (livros legacy pré-J.2) e pelo render de J.3.
+
 **Helpers canônicos** (`shared/`):
 - `yaml_writer.py` — `generate_id()` (slug ASCII puro, transliteração via `ACCENT_MAP`), `transliterate()`, `format_authors_display()`, formatadores YAML
 - `ragflow.py` — `join_paragraph_lines()`, `format_bullets()`, `optimize_for_ragflow()`
 - `ocr_patterns.py` — `CLEANUP_PATTERNS` (superset usado por ambos os converters) + `remove_artifacts()`
+- `footnote_filter.py` — `is_substantive_footnote`, `filter_footnote_items` (Fase J)
 
 ## Uso
 
@@ -145,7 +149,7 @@ A skill é definida em `.claude/skills/convert-book/SKILL.md` (driver + prompt L
 ### Testes
 
 ```bash
-pytest tests/                                   # Suite completa (155 passed, 0 xfail)
+pytest tests/                                   # Suite completa (194 passed, 0 xfail)
 pytest tests/test_snapshot.py                   # Goldens da Etapa 2 (ficha + livro)
 UPDATE_GOLDENS=1 pytest tests/test_snapshot.py  # Re-baseline goldens (exige justificativa no commit)
 ```
@@ -202,13 +206,14 @@ Decisões travadas em `docs/adr/` — não reabrir sem novo ADR:
 - **[ADR-0001](docs/adr/0001-id-schema-frontmatter.md)** — schema de `id` (slug ASCII puro, sem prefixo `tipo_`) + campo `tipo` como vocabulário fechado.
 - **[ADR-0002](docs/adr/0002-book-converter-llm-agnostic.md)** — `book_converter` é LLM-agnóstico (recebe `str`, não importa SDK).
 - **[ADR-0003](docs/adr/0003-progress-storage-json-filelock.md)** — storage de progresso permanece JSON + FileLock (não migra para SQLite).
+- **[ADR-0004](docs/adr/0004-footnotes-sidecar-yaml.md)** — Footnotes em sidecar YAML (`<name>.footnotes.yaml`); body MD limpo; `inline_notes` flag controla render de `## Notas`.
 
 ## Estrutura do projeto
 
 ```
 iaraa-ragflow/
 ├── CLAUDE.md                          # Guia para Claude Code (root)
-├── PLANO_REFATORACAO.md               # Roadmap das Fases 0–H
+├── PLANO_REFATORACAO.md               # Roadmap das Fases 0–J
 ├── README.md                          # Este arquivo
 │
 ├── conversao/                         # Etapa 1: PDF → Markdown (DocMind)
@@ -244,7 +249,7 @@ iaraa-ragflow/
 ├── docs/
 │   └── adr/                           # 0001, 0002, 0003
 │
-└── tests/                             # pytest (155 passed, 0 xfail)
+└── tests/                             # pytest (194 passed, 0 xfail)
     ├── fixtures/
     ├── golden/                        # Snapshots (ficha + livro)
     └── test_*.py
