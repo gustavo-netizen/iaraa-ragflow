@@ -1,96 +1,122 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in `processamento/`.
 
 ## Project Overview
 
-This project optimizes Markdown files from "systemRAG" (OCR-generated via DocMind/Marco Converter) for ingestion into RAGFlow. There are two types of documents:
+`processamento/` is **Stage 2** of the iaraa-ragflow pipeline. It post-processes Markdown produced by Stage 1 (DocMind, in `conversao/`) so it is ready for RAGFlow ingestion. Two converters share a canonical helper layer:
 
-1. **Fichas Agroecológicas** - Technical agricultural sheets from the Brazilian Ministry of Agriculture (use `ficha_converter/`)
-2. **Livros técnicos** - Full technical books in PDF converted to Markdown (use `/convert-book` skill)
+1. **Fichas Agroecológicas** — `ficha_converter/` (regex-based, 6 phases)
+2. **Livros Técnicos** — `book_converter/` (LLM-powered, 6 phases — invoked via `/convert-book` skill)
+3. **Shared helpers** — `shared/` (Fase B: canonical `generate_id`, `join_paragraph_lines`, `CLEANUP_PATTERNS`)
 
-## Key Commands
+See `processamento/CONTEXT.md` for the domain vocabulary (chunk sense 1 = PDF slice vs sense 2 = RAGFlow chunk; Stage 1 vs Marco Converter; PT/EN naming convention).
 
-### Fichas Agroecológicas (ficha_converter/)
-
-```bash
-# Convert single file (full pipeline)
-python -m ficha_converter "MD/MD systemRAG/10-biofertilizante-vairo-1.md" -o "output.md" -v
-
-# Batch convert directory
-python -m ficha_converter "MD/MD systemRAG/" -o "MD/converted/" --batch -v
-
-# Clean only (Phase 1, no restructuring)
-python -m ficha_converter "arquivo.md" -o "saida.md" --clean-only
-
-# Preview without writing (dry-run)
-python -m ficha_converter "arquivo.md" -o "saida.md" --dry-run -v
-
-# Test metadata extraction (Phase 2)
-python -m ficha_converter "MD/MD systemRAG/" --test-extract
-
-# Test YAML frontmatter generation (Phase 3)
-python -m ficha_converter "MD/MD systemRAG/" --test-yaml
-```
-
-### Livros Técnicos (/convert-book)
-
-Livros técnicos são processados exclusivamente via skill `/convert-book`, que usa análise LLM para extrair metadados, identificar capítulos e remover seções irrelevantes.
+## Architecture
 
 ```
-/convert-book <input.md> [-o <output.md>] [-v]
+processamento/
+├── ficha_converter/       # Fichas Agroecológicas (regex, v1.1.0)
+├── book_converter/        # Livros Técnicos (LLM-agnostic, v2.0.0)
+└── shared/                # Canonical helpers (Fase B)
 ```
 
-**Pipeline (6 fases):**
+### `ficha_converter/` — Fichas Agroecológicas
+
+Regex-based 6-phase pipeline. Run with `python -m ficha_converter`.
+
+**Module layout:**
+```
+ficha_converter/
+├── __init__.py        # Public exports (v1.1.0)
+├── __main__.py        # Entry point (python -m ficha_converter)
+├── cli.py             # Command-line interface + orchestration
+├── config.py          # Ficha-specific patterns (SECTION_PATTERNS, SUBSECTION_PATTERNS, TAG_KEYWORDS)
+├── cleanup.py         # Phase 1: OCR cleanup (delegates to shared/ocr_patterns.py)
+├── extraction.py      # Phase 2: Metadata extraction
+├── frontmatter.py     # Phase 3: YAML frontmatter (uses shared/yaml_writer.py)
+├── restructure.py     # Phase 4: Markdown restructuring + assembly
+└── table_injector.py  # Phase 4.5: Table injection from *_all_figures.yaml
+```
+
+**6-Phase Pipeline:**
+1. **Cleanup** — removes OCR artifacts (processing metadata, page divisions, figure references)
+2. **Extraction** — title (ALL CAPS), authors (`SURNAME, I. I.`), sheet number, summary
+3. **YAML Frontmatter** — `id`, `tipo: ficha_agroecologica`, `titulo`, `autores`, `tags`, `resumo`
+4. **Restructuring** — sections to `##`/`###` headers, numbered steps, standardized bullets
+4.5. **Table Injection** — extracts tables from `<name>_all_figures.yaml` (Stage 1 sidecar) and injects them before "Referências bibliográficas"
+5. **RAGFlow Optimization** — `join_paragraph_lines()` merges OCR line breaks
+
+**Key CLI flags:**
+- `--dry-run` — preview without writing
+- `--clean-only` — only Phase 1
+- `--test-extract` / `--test-yaml` — debug Phases 2 / 3
+- `--batch` — process a directory
+
+### `book_converter/` — Livros Técnicos (LLM-agnostic)
+
+LLM-powered package for full books. **Locked by ADR-0002:** the package never imports an LLM SDK — it receives `llm_response: str` from a driver (the `/convert-book` skill in production).
+
+The skill itself is defined at `.claude/skills/convert-book/SKILL.md` (prompt + driver logic). The Python package lives at `processamento/book_converter/` and is imported as `from processamento.book_converter import ...`.
+
+**Module layout:**
+```
+book_converter/
+├── __init__.py            # Public exports (v2.0.0)
+├── models.py              # Dataclasses (TocEntry, ChapterBoundary, BookMetadata)
+├── llm_analyzer.py        # Phase 1: build_analysis_prompt() + parse_llm_response()
+├── structure_applier.py   # Phase 2: apply LLM-identified structure
+├── ocr_cleanup.py         # Phase 3: OCR artifact removal + figure descriptions
+├── llm_pipeline.py        # Phase 4: insert ## headers + _fix_chapter_headers_fallback()
+├── ragflow_optimize.py    # Phase 5: join lines, bullets, spacing
+└── assembler.py           # Phase 6: final assembly + get_output_filename()
+```
+
+**6-Phase Pipeline:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  FASE 1 (LLM) - Análise Adaptativa                          │
-│  ├─ Extrair metadados (título, autores, ISBN, ano, editora) │
-│  ├─ Identificar estrutura de capítulos com posições         │
-│  └─ Detectar seções para remover (figuras, TOC, refs, front)│
+│  Phase 1 (LLM, via driver) — Adaptive Analysis              │
+│  ├─ Extract metadata (title, authors, ISBN, year, publisher)│
+│  ├─ Identify chapter structure with line positions          │
+│  └─ Detect sections to remove (figures, TOC, refs, frontmtr)│
 ├─────────────────────────────────────────────────────────────┤
-│  FASE 2 (Código) - Remover Seções                           │
-│  └─ Remover frontmatter, TOC, refs (linhas do original)     │
+│  Phase 2 (Code) — Section Removal                           │
+│  └─ Remove frontmatter, TOC, references (line-based)        │
 ├─────────────────────────────────────────────────────────────┤
-│  FASE 3 (Código) - Limpeza OCR                              │
-│  ├─ Remover artefatos Marco/DocMind (ocr_cleanup.py)        │
-│  ├─ remove_figure_descriptions() - blocos **Type:**...*Conf*│
-│  └─ Remover headers/footers com título do livro             │
+│  Phase 3 (Code) — OCR Cleanup                               │
+│  ├─ Remove Marco/DocMind artifacts (ocr_cleanup.py)         │
+│  ├─ remove_figure_descriptions() — **Type:**...*Confidence:*│
+│  └─ Remove headers/footers with book title                  │
 ├─────────────────────────────────────────────────────────────┤
-│  FASE 4 (Código) - Inserir Headers                          │
-│  ├─ Inserir ## headers nos capítulos por busca de título    │
-│  └─ _fix_chapter_headers_fallback() - CAPÍTULO/PARTE/etc.   │
+│  Phase 4 (Code) — Insert Headers                            │
+│  ├─ Insert ## headers at chapter titles (text search)       │
+│  └─ _fix_chapter_headers_fallback() — CAPÍTULO/PARTE/etc.   │
 ├─────────────────────────────────────────────────────────────┤
-│  FASE 5 (Código) - RAGFlow Optimization                     │
-│  ├─ join_paragraph_lines(), format_bullets()                │
-│  └─ normalize_spacing()                                     │
+│  Phase 5 (Code) — RAGFlow Optimization                      │
+│  └─ join_paragraph_lines(), format_bullets(), spacing       │
 ├─────────────────────────────────────────────────────────────┤
-│  FASE 6 (Código) - Assembly                                 │
-│  ├─ Gerar YAML frontmatter + documento final                │
-│  └─ get_output_filename() - sugerir nome baseado no título  │
+│  Phase 6 (Code) — Assembly                                  │
+│  ├─ YAML frontmatter (tipo: livro_tecnico) + final document │
+│  └─ get_output_filename() — suggest filename from title     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Correções Automáticas:**
+**Programmatic use** (driver responsibility — Stage 2 never calls an LLM directly):
 
-| Função | Descrição |
-|--------|-----------|
-| `remove_figure_descriptions()` | Remove blocos `**Type:**`...`*Confidence:*` gerados pelo OCR |
-| `_fix_chapter_headers_fallback()` | Detecta CAPÍTULO/PARTE/APRESENTAÇÃO/PREFÁCIO e adiciona `##` |
-| `get_output_filename()` | Sugere nome de arquivo baseado no título extraído |
-
-**Uso programático:**
 ```python
-from book_converter.llm_pipeline import convert_book_with_llm
-from book_converter.llm_analyzer import build_analysis_prompt, parse_llm_response
+from processamento.book_converter import (
+    build_analysis_prompt,
+    parse_llm_response,
+    convert_book_with_llm,
+)
 
-# 1. Gerar prompt para análise
+# 1. Driver builds the prompt
 prompt = build_analysis_prompt(content, max_lines=500)
 
-# 2. Obter resposta do LLM (JSON com metadados, capítulos, seções)
-llm_response = "..."  # JSON do LLM
+# 2. Driver calls its own LLM (Claude, GPT, etc.) — out of scope here
+llm_response = "..."  # JSON string
 
-# 3. Executar pipeline
+# 3. Driver invokes the pipeline
 document, log = convert_book_with_llm(
     content=content,
     filename="livro.md",
@@ -98,7 +124,7 @@ document, log = convert_book_with_llm(
 )
 ```
 
-**Formato da resposta LLM:**
+**LLM response schema** (driver must produce this JSON):
 ```json
 {
   "metadados": {
@@ -120,169 +146,113 @@ document, log = convert_book_with_llm(
 }
 ```
 
-**Notas sobre `remover`:**
-- `frontmatter`: [inicio, fim] - Créditos, ficha catalográfica, licença (antes do Prefácio)
-- `toc`: [inicio, fim] - Sumário/Índice
-- `figuras`: [[inicio, fim], ...] - Blocos de figuras
-- `referencias`: [[inicio, fim], ...] - Seções de referências (pode haver múltiplas)
+Notes on `remover`:
+- `frontmatter`: `[start, end]` — credits, ficha catalográfica, license (before Prefácio)
+- `toc`: `[start, end]` — Sumário/Índice
+- `figuras`: `[[start, end], ...]` — figure blocks
+- `referencias`: `[[start, end], ...]` — references sections (multiple allowed)
 
-**Documentação completa:** `.claude/skills/convert-book/SKILL.md`
+Full skill documentation: `.claude/skills/convert-book/SKILL.md`.
 
-## Architecture
+### `shared/` — Canonical helpers (Fase B)
 
-### ficha_converter/ - Fichas Agroecológicas
+Single source of truth for cross-converter logic. Both `ficha_converter` and `book_converter` import from here — never re-implement locally.
 
-Modular Python package for converting Fichas Agroecológicas. Six-phase pipeline organized in 5 modules:
-
-**Module structure:**
 ```
-ficha_converter/
-├── __init__.py       # Public exports (v1.1.0)
-├── __main__.py       # Entry point
-├── cli.py            # Command-line interface
-├── config.py         # Editable constants (patterns, keywords)
-├── cleanup.py        # Phases 1, 5: OCR cleanup + RAGFlow optimization
-├── extraction.py     # Phase 2: Metadata extraction
-├── frontmatter.py    # Phase 3: YAML frontmatter generation
-├── restructure.py    # Phase 4: Markdown restructuring + assembly
-└── table_injector.py # Phase 4.5: Table injection from YAML
+shared/
+├── yaml_writer.py     # generate_id, transliterate, ACCENT_MAP, format_authors_display, YAML formatters
+├── ragflow.py         # join_paragraph_lines, format_bullets, optimize_for_ragflow
+└── ocr_patterns.py    # CLEANUP_PATTERNS (superset) + remove_artifacts
 ```
 
-**6-Phase Pipeline:**
-1. **Phase 1 - Cleanup**: Removes OCR artifacts (processing metadata, page divisions, figure references)
-2. **Phase 2 - Extraction**: Extracts title (ALL CAPS line), authors (SURNAME, I. I. format), sheet number, summary
-3. **Phase 3 - YAML Frontmatter**: Generates id, titulo, autores, tags, resumo
-4. **Phase 4 - Restructuring**: Converts sections to markdown headers (##, ###), formats numbered steps, standardizes bullets
-4.5. **Phase 4.5 - Table Injection**: Extracts tables from `*_all_figures.yaml` and injects into body (see below)
-5. **Phase 5 - RAGFlow Optimization**: `join_paragraph_lines()` merges OCR line breaks to prevent small chunks
+Key functions:
+- **`generate_id(title)`** — pure ASCII slug, transliterates accents via `ACCENT_MAP` (`café → cafe`). Schema locked by ADR-0001 — no `tipo_` prefix.
+- **`join_paragraph_lines(text)`** — merges lines that start with lowercase or `(`/`[` (OCR continuation). Preserves blank lines, headers, list items, and lines starting with uppercase.
+- **`CLEANUP_PATTERNS`** — superset of regex patterns shared by both converters; `remove_artifacts()` applies them.
 
-**Table Injector (Phase 4.5):**
-Extracts tables from YAML files generated by Marco Converter and injects them into the document body.
+## Commands
 
-- `find_yaml_file()` - Locates `[name]_all_figures.yaml` in same directory as MD
-- `load_tables_from_yaml()` - Loads entries with `image_type: table`, sorted by page number
-- `format_table_section()` - Converts table to RAG-optimized markdown format
-- `inject_tables_in_body()` - Inserts formatted tables before "Referências bibliográficas"
-- `translate_to_portuguese()` - Translates English descriptions to Portuguese
+```bash
+cd processamento/
 
-Output format for each table:
-```markdown
-### [Table Title]
+# Fichas — single file
+python -m ficha_converter "input.md" -o "output.md" -v
 
-[Description translated to Portuguese]
+# Fichas — batch directory
+python -m ficha_converter "MD/MD systemRAG/" -o "MD/converted/" --batch -v
 
-**Itens:**
-* item1
-* item2
+# Fichas — clean only (Phase 1)
+python -m ficha_converter "input.md" -o "output.md" --clean-only
 
-**Insight:** [Key insight translated to Portuguese]
+# Fichas — preview (dry-run)
+python -m ficha_converter "input.md" -o "output.md" --dry-run -v
+
+# Fichas — test metadata extraction (Phase 2)
+python -m ficha_converter "MD/MD systemRAG/" --test-extract
+
+# Fichas — test YAML generation (Phase 3)
+python -m ficha_converter "MD/MD systemRAG/" --test-yaml
+
+# Livros — via Claude Code skill (driver lives at .claude/skills/convert-book/)
+/convert-book <input.md> [-o <output.md>] [-v]
 ```
 
-Development history: See `PLANO_TABLE_INJECTOR.md` for implementation details.
+## Architecture Decision Records
 
-**Key CLI flags:**
-- `--dry-run` - Preview without writing files
-- `--clean-only` - Only Phase 1 cleanup
-- `--test-extract` - Test metadata extraction
-- `--test-yaml` - Test YAML frontmatter generation
+Locked decisions in `../docs/adr/`. Don't reopen without registering a new ADR.
 
-**Editable config:** `config.py` contains `CLEANUP_PATTERNS`, `TAG_KEYWORDS`, `SECTION_PATTERNS` for easy customization.
+- **[ADR-0001](../docs/adr/0001-id-schema-frontmatter.md)** — `id` schema (pure ASCII slug, no `tipo_` prefix) + `tipo` as closed vocabulary (`ficha_agroecologica | livro_tecnico`).
+- **[ADR-0002](../docs/adr/0002-book-converter-llm-agnostic.md)** — `book_converter` is LLM-agnostic; never imports an LLM SDK.
+- **[ADR-0003](../docs/adr/0003-progress-storage-json-filelock.md)** — Stage 1 progress storage stays JSON + FileLock.
 
-### book_converter/ - Livros Técnicos (LLM pipeline)
-
-LLM-powered package for converting full books. Uses Claude for adaptive structure analysis instead of regex.
-
-**Module structure** (at root `.claude/skills/convert-book/`):
-```
-.claude/skills/convert-book/   # (root of project, not processamento/)
-├── SKILL.md                 # Skill definition for /convert-book
-└── book_converter/          # Package for Livros Técnicos (v2.0.0)
-    ├── __init__.py          # Public exports
-    ├── models.py            # Dataclasses (TocEntry, ChapterBoundary, BookMetadata)
-    ├── ocr_cleanup.py       # OCR artifact removal + figure descriptions
-    ├── ragflow_optimize.py  # RAGFlow optimization (join lines, bullets, spacing)
-    ├── assembler.py         # Final document assembly + get_output_filename()
-    ├── llm_analyzer.py      # LLM prompt generation + JSON parsing
-    ├── structure_applier.py # Apply LLM-identified structure
-    └── llm_pipeline.py      # LLM pipeline + _fix_chapter_headers_fallback()
-```
-
-### RAGFlow Integration
+## RAGFlow Integration
 
 RAGFlow recognizes Markdown headers (`## `, `### `) natively as chunk delimiters — no custom markers needed.
 
-**Delimiter configuration:**
-- **Fichas**: No delimiter needed — fichas are small enough for RAGFlow's automatic token-based chunking
-- **Books**: Configure delimiter as `## ` for chapter-level chunking, or `### ` for section-level
+| Document type | Delimiter | Reason |
+|--------------|-----------|--------|
+| Fichas | *(none)* | Small enough for automatic token-based chunking |
+| Livros | `## ` | Chapter-level chunking |
 
-Key implications:
-- Internal `---` separators removed (only YAML frontmatter keeps them)
-- Line breaks from PDF page width cause fragmented chunks — solved by `join_paragraph_lines()`
-- Headers `##` and `###` serve as natural chunk boundaries recognized by RAGFlow
+`join_paragraph_lines()` merges OCR line breaks (caused by PDF page width) to prevent fragmented chunks. Internal `---` separators are removed; only the YAML frontmatter delimiter remains.
 
-### Directory Structure
+## Output Format
 
-```
-.
-├── ficha_converter/      # Package for Fichas Agroecológicas (v1.1.0)
-│   ├── __init__.py
-│   ├── __main__.py
-│   ├── cli.py
-│   ├── config.py
-│   ├── cleanup.py
-│   ├── extraction.py
-│   ├── frontmatter.py
-│   ├── restructure.py
-│   └── table_injector.py # Phase 4.5: Table injection from YAML
-├── MD/
-│   ├── MD systemRAG/     # Input: OCR-generated Fichas (raw)
-│   ├── MD Maria/         # Reference: manually formatted Fichas
-│   └── converted/        # Output: processed Fichas for RAGFlow
-└── Teste/
-    ├── Teste SystemRAG/  # Input: OCR-generated books (raw)
-    └── Teste RAGFlow/    # Output: processed books for RAGFlow
+Both converters produce Markdown with YAML frontmatter (schema locked by ADR-0001) and `##`/`###` headers in the body:
+
+```yaml
+---
+id: biofertilizante_vairo
+tipo: ficha_agroecologica         # closed vocabulary
+titulo: Biofertilizante Vairo
+autores: [C. D. Leite, A. L. Meira]
+tags: [agroecologia, biofertilizante]
+resumo: Técnica de produção...
+---
 ```
 
-### External Directories
+```markdown
+# Título do Documento
 
-**Livros Processados (batch processed):**
+> Autores: C. D. Leite e A. L. Meira
+
+## Ingredientes
+
+* Esterco bovino fresco (2 kg)
+
+## Como Preparar
+
+### 1º passo
+
+Misturar os ingredientes...
 ```
-/home/gustavo/Downloads/results_md_yaml/Livros/
-├── [68 folders with original + processed books]
-└── Livros_Processados/   # 76 processed books (Lote 1)
-    └── Processado_*.md   # Ready for RAGFlow ingestion
 
-/home/gustavo/Downloads/results_md_yaml/Livros_2/
-└── Livros_Processados_2.1/  # 20 processed books (Lote 2)
-    └── *.md                  # Ready for RAGFlow ingestion
+## Tests
+
+Tests live at the repo root in `tests/`:
+
+```bash
+pytest tests/                                   # Full suite (155 passed, 0 xfail)
+pytest tests/test_snapshot.py                   # Stage-2 goldens (ficha + livro)
+UPDATE_GOLDENS=1 pytest tests/test_snapshot.py  # Re-baseline (commit message must justify)
 ```
-
-**Batch Processing Stats (2026-01-15):**
-
-| Lote | Arquivos | Tamanho Original |
-|------|----------|------------------|
-| Livros_Processados | 76 | ~29 MB |
-| Livros_Processados_2.1 | 20 | ~9.5 MB |
-| **Total** | **96** | **~38.5 MB** |
-
-**Post-Processing (Sumário + Referências removal):**
-- Sumário/Índice removido: ~76 KB
-- Referências removidas: ~10.8 MB (97 seções)
-- **Total removido: ~10.9 MB**
-
-## Important Patterns
-
-The `join_paragraph_lines()` function joins continuation lines that:
-- Start with lowercase letter (sentence continuation)
-- Start with `(` or `[` (parenthetical complement)
-
-It preserves:
-- Blank lines (paragraph separators)
-- Headers (#, ##, ###)
-- List items (*, -, •)
-- Lines starting with uppercase (new paragraph)
-
-RAGFlow natively recognizes Markdown headers as chunk delimiters:
-- Configure `## ` as delimiter for chapter-level chunks (books)
-- Configure `### ` for finer section-level chunks
-- Fichas are small enough for automatic token-based chunking
