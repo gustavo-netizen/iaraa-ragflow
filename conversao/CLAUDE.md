@@ -42,7 +42,7 @@ python orchestrator.py run [--restart] [--retry-failed] [--no-quality-gate] [-t 
 `AppConfig` (Fase C, `scripts/config.py`) is the single source of truth for runtime knobs. Defaults preserve current production behavior; override via env vars:
 
 ```bash
-DOCMIND_OCR_MODEL=qwen3-vl-plus-2025-12-19   # default
+DOCMIND_OCR_MODEL=qwen3-vl-plus              # default (alias — habilita prompt caching)
 DOCMIND_LLM_MODEL=qwen-vl-max-latest         # default
 
 DOCMIND_RETRY_MAX_ATTEMPTS=4

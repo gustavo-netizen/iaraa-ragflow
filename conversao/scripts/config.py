@@ -55,7 +55,7 @@ class AppConfig:
     l.287, l.693, l.540-541 and ``retry_failed_pages.py`` l.42 before Phase C).
     """
 
-    ocr_model: str = "qwen3-vl-plus-2025-12-19"
+    ocr_model: str = "qwen3-vl-plus"
     llm_model: str = "qwen-vl-max-latest"
 
     retry_max_attempts: int = 4
