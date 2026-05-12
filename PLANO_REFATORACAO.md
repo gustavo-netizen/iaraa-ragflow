@@ -332,7 +332,9 @@ conversao/validation/
 │   - MarkdownChecker         (C1 page headers, C2 fig refs, C3 file size)
 │   - QualityChecker          (D1-D5 buckets, garbled, repeats, score, review)
 │   - ElementChecker          (E1-E4 tables/formulas/images/code)
-│   - MarcoChecker            (F1 yaml + title + page headers)
+│   - MarcoChecker            (F1: strict mode lê output/*/.validation.yaml
+│                              e enforça KQI ≥ 95/0.85/95; structural fallback
+│                              quando ausente: yaml + title + page headers)
 │   + split_into_pages helper compartilhado
 ├── pipeline.py            (44 linhas — ValidationPipeline + ValidationReport)
 ├── cost.py                (152 linhas — TokenUsage + CostBreakdown +
