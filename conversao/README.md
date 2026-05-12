@@ -130,7 +130,11 @@ DocMind0.8/
 ├── input/                  # Place PDFs here
 ├── output/                 # Processing output (auto-generated)
 ├── final-delivery/         # Clean output (1 folder per book)
-└── logs/                   # Processing logs
+└── logs/                   # Two sinks:
+                            #   - api_errors.jsonl: JSON Lines, one record per failed API attempt
+                            #     (phase, attempt, model, http_status, dashscope_code, request_id,
+                            #     category, pdf_name, page); written by docmind/error_log.py
+                            #   - run_<ts>_<task>.log: tee'd stdout/stderr of the orchestrator
 ```
 
 ## Processing Pipeline

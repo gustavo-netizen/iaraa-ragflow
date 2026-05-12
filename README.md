@@ -33,10 +33,11 @@ A orquestração é em Python (`conversao/orchestrator.py`, Fase G). `run.sh` é
 - Checkpoint/resume por página (`progress.json` + `filelock`)
 - Processamento concorrente (30 PDFs simultâneos, 10 chamadas LLM por PDF)
 - `AppConfig.from_env()` (Fase C) — modelo, retry, health e timeout via env vars
+- Log estruturado de falhas da API em `logs/api_errors.jsonl` (uma linha por tentativa não-200, com `category`, `request_id`, `pdf_name`/`page`); stdout do run vai para `logs/run_<ts>_<task>.log` via tee
 
 **Layout dos módulos** (pós-refactor Fases C–F):
 - `conversao/orchestrator.py` — entry-point Python (`Pipeline.status()` / `Pipeline.run()`)
-- `conversao/docmind/` — `retry.py`, `api_key_pool.py`, `qwen_client.py`, `page_processor.py`, `pipeline.py`, `document.py`
+- `conversao/docmind/` — `retry.py`, `api_key_pool.py`, `qwen_client.py`, `error_log.py`, `page_processor.py`, `pipeline.py`, `document.py`
 - `conversao/scripts/` — scripts de pipeline (split, merge, postprocess, retry, quality, delivery) + `scripts/admin/` para utilitários
 - `conversao/validation/` — Checkers plugáveis (`StructureChecker`, `ContentSyntaxChecker`, `MarkdownChecker`, `QualityChecker`, `ElementChecker`, `MarcoChecker`) + `cost.py` + `report.py`
 
@@ -275,7 +276,7 @@ export DASHSCOPE_API_KEY="sk-xxxx"
 ### Tuning via env vars (Etapa 1, Fase C)
 
 ```bash
-DOCMIND_OCR_MODEL=qwen3-vl-plus-2025-12-19
+DOCMIND_OCR_MODEL=qwen3-vl-plus
 DOCMIND_LLM_MODEL=qwen-vl-max-latest
 DOCMIND_RETRY_MAX_ATTEMPTS=4
 DOCMIND_RETRY_BASE_DELAY=1.0

@@ -99,12 +99,13 @@ python3 scripts/progress_manager.py --status --progress-file progress.json
 ```
 conversao/
 ├── orchestrator.py            # Fase G: Pipeline.status() / Pipeline.run() — Python entry-point
-├── run.sh                     # Thin shell wrapper (~207 lines): env + monitor + --history/--no-quality-gate
+├── run.sh                     # Thin shell wrapper: env + monitor + tee run log + --history/--no-quality-gate
 │
 ├── docmind/                   # Fase D: Stage-1 core (split from monolithic docmind_converter.py)
 │   ├── retry.py               # RetryConfig + exponential backoff with jitter
 │   ├── api_key_pool.py        # APIKeyHealthMonitor + load balancing
 │   ├── qwen_client.py         # QwenClient (OCR + VLM dashscope wrapper) + CallResult
+│   ├── error_log.py           # JSON Lines sidecar: log_api_error() + classify() (logs/api_errors.jsonl)
 │   ├── page_processor.py      # process_single_page_with_context (3-page window)
 │   ├── pipeline.py            # process_pdf_async + process_all_pdfs_parallel
 │   └── document.py            # Fase E: Document dataclass (per PDF + chunks),
@@ -173,7 +174,7 @@ Step 8: final_delivery_check.py → validation/ (Fase F)
 **3-Page Context Window** (`docmind/page_processor.py`): each page is processed with prev/current/next OCR text to identify cross-page figure references.
 
 **Two-Phase VLM Processing** (`docmind/pipeline.py`):
-1. **OCR phase** — simple text extraction (`qwen3-vl-plus-2025-12-19`)
+1. **OCR phase** — simple text extraction (`qwen3-vl-plus`, alias bare — habilita prompt caching)
 2. **LLM phase** — structured extraction with chain-of-thought prompt (`qwen-vl-max-latest`)
 
 **Prompt Modes**:
@@ -183,6 +184,8 @@ Step 8: final_delivery_check.py → validation/ (Fase F)
 **API Key Pool** (`docmind/api_key_pool.py`): `APIKeyHealthMonitor` tracks per-key health; auto-disables a key for `DOCMIND_HEALTH_DISABLE_DURATION` seconds (default 5 min) after `DOCMIND_HEALTH_DISABLE_AFTER` consecutive failures (default 5).
 
 **Retry** (`docmind/retry.py`): `RetryConfig` exponential backoff with jitter, `max_attempts=4`, base delay `1.0s`.
+
+**Structured Error Log** (`docmind/error_log.py`): every OCR / VLM attempt that doesn't return 200 (including intermediate retries) appends one JSON Lines record to `logs/api_errors.jsonl`. Fields: `ts`, `phase` (`ocr` | `vlm`), `attempt`/`max_attempts`, `model`, `key_short` (masked), `http_status`, `dashscope_code`, `request_id`, `latency_s`, `category` (`throttle` | `moderation` | `timeout` | `network` | `server_error` | `auth` | `bad_request` | `exception` | `other`), `message`, plus per-call context (`pdf_name`, `page`, `prompt_mode`). Override the path via `DOCMIND_ERROR_LOG`. FileLock-guarded so concurrent workers append safely; writer is no-raise. In parallel, `run.sh` `tee`s stdout/stderr of the orchestrator into `logs/run_<timestamp>_<task>.log` for human review.
 
 **Document dataclass** (`docmind/document.py`, Fase E): per-PDF state — `discover()`, `is_complete()`, `failed_pages()`, `apply_page_offset()`. Used by merge + retry scripts.
 

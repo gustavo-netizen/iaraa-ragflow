@@ -224,8 +224,9 @@ async def process_pdf_async(
 
         async def ocr_single_page(page_num: int, image: Any):
             inner_loop = asyncio.get_event_loop()
+            ocr_context = {"pdf_name": pdf_name, "page": page_num}
             ocr_text = await inner_loop.run_in_executor(
-                None, lambda: client.simple_ocr_sync(image)
+                None, lambda: client.simple_ocr_sync(image, context=ocr_context)
             )
             print(f"   [OCR] [{page_num}/{len(images)}] ✅ ({len(ocr_text)} 字符)", flush=True)
             return page_num, ocr_text
@@ -292,6 +293,7 @@ async def process_pdf_async(
                 context_mode=context_mode,
                 prompt_mode=prompt_mode,
                 model=model,
+                pdf_name=pdf_name,
             )
             tasks.append((page_num, task))
 
