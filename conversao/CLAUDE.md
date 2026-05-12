@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working in `con
 
 DocMind is **Stage 1** of the iaraa-ragflow pipeline. It converts PDFs to Markdown + YAML metadata using Alibaba's Qwen-VL API (OCR + VLM) with concurrent processing, multi-key load balancing, and page-level checkpoint/resume.
 
-After Fase G, the pipeline is orchestrated in Python (`conversao/orchestrator.py`). `run.sh` is a thin wrapper (~198 lines) that loads API keys, spawns the monitor daemon, handles `--history`, then delegates to `python orchestrator.py run [...]`. Operators see no behavior change; the CLI surface is preserved.
+After Fase G, the pipeline is orchestrated in Python (`conversao/orchestrator.py`). `run.sh` is a thin wrapper (~207 lines) that loads API keys, spawns the monitor daemon, handles `--history`/`--no-quality-gate`, then delegates to `python orchestrator.py run [...]`. Operators see no behavior change; the CLI surface is preserved.
 
 ## Essential Commands
 
@@ -29,9 +29,12 @@ After Fase G, the pipeline is orchestrated in Python (`conversao/orchestrator.py
 # View task history
 ./run.sh --history
 
+# Skip the Step 5.5 KQI gate (proceed even if PDFs fail MARCO thresholds)
+./run.sh --no-quality-gate
+
 # Direct orchestrator invocation (bypass run.sh — useful for tooling/JSON status)
 python orchestrator.py status [--json]
-python orchestrator.py run [--restart] [--retry-failed] [-t TASK_NAME]
+python orchestrator.py run [--restart] [--retry-failed] [--no-quality-gate] [-t TASK_NAME]
 ```
 
 ### Environment Variables for Tuning
@@ -96,7 +99,7 @@ python3 scripts/progress_manager.py --status --progress-file progress.json
 ```
 conversao/
 ├── orchestrator.py            # Fase G: Pipeline.status() / Pipeline.run() — Python entry-point
-├── run.sh                     # Thin shell wrapper (~198 lines): env + monitor + --history
+├── run.sh                     # Thin shell wrapper (~207 lines): env + monitor + --history/--no-quality-gate
 │
 ├── docmind/                   # Fase D: Stage-1 core (split from monolithic docmind_converter.py)
 │   ├── retry.py               # RetryConfig + exponential backoff with jitter
@@ -147,6 +150,12 @@ Step 4: docmind_converter.py (for small PDFs)
 Step 5: merge_results_full.py
     └── Combines chunks, adjusts page numbers (uses Document.apply_page_offset)
 
+Step 5.5: KQI Quality Gate (MARCO) — orchestrator-native, post-fix
+    └── Reads output/*/{name}.validation.yaml; aborts (rc=1) if any
+        overall_quality_pass=false (yaml_insertion ≥ 95% / avg_confidence
+        ≥ 0.85 / page_success ≥ 95%). progress.json stays in_progress and
+        Steps 6-9 do not run. Skip with --no-quality-gate.
+
 Step 6: postprocess.py
     └── Fixes tables, headings, LaTeX validation
 
@@ -155,6 +164,8 @@ Step 7: generate_quality_report.py → validation/ (Fase F)
 
 Step 8: final_delivery_check.py → validation/ (Fase F)
     └── Validates output completeness via pluggable Checkers
+        (includes MarcoChecker strict mode — flags KQI violations as issues
+        even when --no-quality-gate let the run reach this point)
 ```
 
 ### Key Design Patterns
@@ -175,7 +186,7 @@ Step 8: final_delivery_check.py → validation/ (Fase F)
 
 **Document dataclass** (`docmind/document.py`, Fase E): per-PDF state — `discover()`, `is_complete()`, `failed_pages()`, `apply_page_offset()`. Used by merge + retry scripts.
 
-**Validation** (`validation/`, Fase F): `Checker` base class with pluggable subclasses (`StructureChecker`, `ContentSyntaxChecker`, `MarkdownChecker`, `QualityChecker`, `ElementChecker`, `MarcoChecker`). Consumed by `final_delivery_check.py` and `generate_quality_report.py` shims.
+**Validation** (`validation/`, Fase F): `Checker` base class with pluggable subclasses (`StructureChecker`, `ContentSyntaxChecker`, `MarkdownChecker`, `QualityChecker`, `ElementChecker`, `MarcoChecker`). Consumed by `final_delivery_check.py` and `generate_quality_report.py` shims. `MarcoChecker` has two modes: **strict** (reads `output/*/.validation.yaml` and enforces the three MARCO thresholds — same data the Step 5.5 quality gate uses) and **structural** fallback (yaml + title + page-header sanity check when no `.validation.yaml` is available).
 
 ### Output Structure
 
@@ -221,14 +232,17 @@ Keys are load-balanced with health monitoring; failing keys are auto-disabled pe
 - Average confidence: ≥ 0.85
 - Page success rate: ≥ 95%
 
-See `docs/MARCO_QUALITY_SPECIFICATION.md` for the full schema. The `MarcoChecker` in `validation/checkers.py` enforces these thresholds.
+See `docs/MARCO_QUALITY_SPECIFICATION.md` for the full schema. Enforced in two places:
+
+1. **Step 5.5 KQI Quality Gate** (`orchestrator._step4_5_quality_gate`) — reads `output/*/{name}.validation.yaml` between merge and final-delivery copy; aborts the pipeline (`rc=1`, `progress.json` stays `in_progress`) if any PDF has `kqi_metrics.overall_quality_pass=false`. The per-PDF `.validation.yaml` is written by `docmind/pipeline.py`. Bypass with `--no-quality-gate`.
+2. **Step 8 `MarcoChecker`** (strict mode) — same thresholds, runs as part of `final_delivery_check.py` after the delivery package is built. Acts as a second line of defense and as the only KQI check when `--no-quality-gate` was used.
 
 ## Tests
 
 Tests live at the repo root in `tests/` (not in `conversao/`).
 
 ```bash
-pytest tests/                          # Full suite (194 passed, 0 xfail)
+pytest tests/                          # Full suite (202 passed, 0 xfail)
 pytest tests/test_orchestrator_run.py  # Pipeline.run() unit tests
 pytest tests/test_orchestrator_status.py
 pytest tests/test_document.py          # Document dataclass (Fase E)

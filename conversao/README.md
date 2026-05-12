@@ -156,6 +156,12 @@ Step 4: Merge Results
 ├── Combine chunks back to original PDFs
 └── Adjust page numbers automatically
 
+Step 4.5: KQI Quality Gate (MARCO)
+├── Reads output/*/{name}.validation.yaml
+└── Aborts pipeline (rc=1) if any overall_quality_pass=false
+    (yaml_insertion ≥ 95% / avg_confidence ≥ 0.85 / page_success ≥ 95%)
+    — bypass with --no-quality-gate
+
 Step 5: Final Delivery
 └── Clean output: BookName.md + BookName.yaml + BookName.footnotes.yaml
 ```
@@ -166,10 +172,11 @@ Step 5: Final Delivery
 ./run.sh [options]
 
 Options:
-  --restart       Force restart, ignore previous progress
-  --status        Show current progress only
-  --retry-failed  Retry previously failed pages only
-  --help, -h      Show help
+  --restart           Force restart, ignore previous progress
+  --status            Show current progress only
+  --retry-failed      Retry previously failed pages only
+  --no-quality-gate   Skip Step 4.5 KQI gate (proceed even if MARCO fails)
+  --help, -h          Show help
 
 Environment:
   MAX_PAGES=50    Max pages per chunk (default: 50)
