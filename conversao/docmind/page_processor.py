@@ -518,6 +518,7 @@ async def process_single_page_with_context(
     prompt_mode: PromptMode = DEFAULT_PROMPT_MODE,
     model: str,
     retry_config: Optional[RetryConfig] = None,  # kept for compat; unused (lives on client)
+    pdf_name: str = "",
 ) -> Dict[str, Any]:
     """Phase 3 for one page: build prompt, call VLM, parse JSON, write YAML files."""
     del retry_config  # retained for backwards-compatible signature; use client.retry
@@ -546,8 +547,19 @@ async def process_single_page_with_context(
             page_num, prev_context, current_context, next_context, detected_prompt_mode
         )
 
+        log_context = {
+            "pdf_name": pdf_name,
+            "page": page_num,
+            "prompt_mode": detected_prompt_mode.name
+            if hasattr(detected_prompt_mode, "name")
+            else str(detected_prompt_mode),
+        }
         result: CallResult = await client.call_vlm(
-            image, prompt, model=model, log_prefix=f"Page {page_num} "
+            image,
+            prompt,
+            model=model,
+            log_prefix=f"Page {page_num} ",
+            context=log_context,
         )
 
         if not result.success:

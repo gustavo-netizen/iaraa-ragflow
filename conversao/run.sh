@@ -203,5 +203,15 @@ fi
 
 # Disable set -e so the orchestrator's exit code propagates verbatim.
 set +e
-python3 "$ORCHESTRATOR" "${ORCHESTRATOR_ARGS[@]}"
-exit $?
+
+# Persist stdout+stderr alongside the structured JSONL error log so a closed
+# terminal doesn't lose the run. The tee'd file is plain text (mirrors what the
+# operator saw); per-attempt API errors land in logs/api_errors.jsonl.
+mkdir -p "$SCRIPT_DIR/logs"
+RUN_LOG="$SCRIPT_DIR/logs/run_$(date +%Y%m%d_%H%M%S)_${TASK_NAME}.log"
+echo -e "${BLUE}📝 Log da run: $RUN_LOG${NC}"
+
+# `set -o pipefail` so the orchestrator's exit code (not tee's) propagates.
+set -o pipefail
+python3 "$ORCHESTRATOR" "${ORCHESTRATOR_ARGS[@]}" 2>&1 | tee "$RUN_LOG"
+exit ${PIPESTATUS[0]}

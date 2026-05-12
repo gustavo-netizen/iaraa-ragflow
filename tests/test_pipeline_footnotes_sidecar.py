@@ -133,7 +133,7 @@ def test_pipeline_writes_footnotes_sidecar_yaml() -> None:
 class _FakeClient:
     """Substitui QwenClient durante o teste — só precisa de simple_ocr_sync."""
 
-    def simple_ocr_sync(self, image: Any) -> str:
+    def simple_ocr_sync(self, image: Any, **kwargs: Any) -> str:
         return "fake ocr text"
 
 

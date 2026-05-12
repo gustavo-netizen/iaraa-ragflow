@@ -13,9 +13,10 @@ import base64
 import time
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, List, Optional
+from typing import Any, List, Mapping, Optional
 
 from .api_key_pool import APIKeyHealthMonitor
+from .error_log import log_api_error
 from .retry import RetryConfig, calculate_retry_delay, should_retry
 
 
@@ -80,11 +81,17 @@ class QwenClient:
         self.retry = retry_config
         self.ocr_model = ocr_model
 
-    def simple_ocr_sync(self, image: Any) -> str:
+    def simple_ocr_sync(
+        self,
+        image: Any,
+        *,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> str:
         """Phase 2 OCR: extract raw text from a single page image.
 
         Returns ``""`` after exhausting retries. Designed to run inside
-        ``loop.run_in_executor``.
+        ``loop.run_in_executor``. ``context`` (e.g. ``{"pdf_name": ..., "page": ...}``)
+        is propagated to the JSONL error log.
         """
         from dashscope import MultiModalConversation
         import dashscope
@@ -124,6 +131,20 @@ class QwenClient:
                 if self.key_pool:
                     self.key_pool.record_failure_sync(api_key)
 
+                log_api_error(
+                    phase="ocr",
+                    attempt=attempt + 1,
+                    max_attempts=self.retry.max_retries + 1,
+                    model=self.ocr_model,
+                    api_key=api_key,
+                    context=context,
+                    status_code=response.status_code,
+                    dashscope_code=response.code,
+                    request_id=getattr(response, "request_id", None),
+                    latency_s=latency,
+                    message=response.message,
+                )
+
                 if response.status_code in self.retry.retry_on_status_codes:
                     if attempt < self.retry.max_retries:
                         delay = calculate_retry_delay(attempt, self.retry)
@@ -137,8 +158,21 @@ class QwenClient:
 
             except Exception as e:
                 last_error = e
+                latency = time.time() - call_start
                 if self.key_pool:
                     self.key_pool.record_failure_sync(api_key)
+
+                log_api_error(
+                    phase="ocr",
+                    attempt=attempt + 1,
+                    max_attempts=self.retry.max_retries + 1,
+                    model=self.ocr_model,
+                    api_key=api_key,
+                    context=context,
+                    latency_s=latency,
+                    exception=e,
+                    message=str(e),
+                )
 
                 if should_retry(e, self.retry) and attempt < self.retry.max_retries:
                     delay = calculate_retry_delay(attempt, self.retry)
@@ -163,11 +197,14 @@ class QwenClient:
         model: str,
         max_tokens: int = 16384,
         log_prefix: str = "",
+        context: Optional[Mapping[str, Any]] = None,
     ) -> CallResult:
         """Phase 3 VLM: send image+prompt, return ``CallResult``.
 
         Retries on transient errors per ``retry_config``. Treats
         ``DataInspectionFailed`` as fatal (non-retriable) per legacy behavior.
+        ``context`` (e.g. ``{"pdf_name": ..., "page": ...}``) is propagated to
+        the JSONL error log.
         """
         from dashscope import MultiModalConversation
         import dashscope
@@ -213,6 +250,20 @@ class QwenClient:
                 if self.key_pool:
                     await self.key_pool.record_failure(api_key)
 
+                log_api_error(
+                    phase="vlm",
+                    attempt=attempt + 1,
+                    max_attempts=self.retry.max_retries + 1,
+                    model=model,
+                    api_key=api_key,
+                    context=context,
+                    status_code=response.status_code,
+                    dashscope_code=response.code,
+                    request_id=getattr(response, "request_id", None),
+                    latency_s=latency,
+                    message=response.message,
+                )
+
                 if "DataInspectionFailed" not in error_msg and attempt < self.retry.max_retries:
                     if (
                         response.status_code in self.retry.retry_on_status_codes
@@ -230,8 +281,21 @@ class QwenClient:
 
             except Exception as e:
                 last_error = e
+                latency = time.time() - call_start
                 if self.key_pool:
                     await self.key_pool.record_failure(api_key)
+
+                log_api_error(
+                    phase="vlm",
+                    attempt=attempt + 1,
+                    max_attempts=self.retry.max_retries + 1,
+                    model=model,
+                    api_key=api_key,
+                    context=context,
+                    latency_s=latency,
+                    exception=e,
+                    message=str(e),
+                )
 
                 if should_retry(e, self.retry) and attempt < self.retry.max_retries:
                     delay = calculate_retry_delay(attempt, self.retry)
