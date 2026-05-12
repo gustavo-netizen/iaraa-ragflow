@@ -249,3 +249,117 @@ def test_marco_checker_compliance_rate_partial(tmp_path):
     (tmp_path / "B.yaml").write_text("title: B\n", encoding="utf-8")
     result = MarcoChecker().run(tmp_path)
     assert result.stats["compliance_rate"] == 50.0
+
+
+def _write_validation_yaml(
+    output_dir: Path,
+    pdf_name: str,
+    *,
+    yaml_insertion_rate: float,
+    average_confidence: float,
+    page_success_rate: float,
+    total_pages: int = 10,
+) -> None:
+    pdf_dir = output_dir / pdf_name
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    failed = round(total_pages * (1 - page_success_rate))
+    successful = total_pages - failed
+    content = (
+        "kqi_metrics:\n"
+        f"  yaml_insertion_rate: {yaml_insertion_rate}\n"
+        f"  average_confidence: {average_confidence}\n"
+        f"  page_success_rate: {page_success_rate}\n"
+        "page_statistics:\n"
+        f"  total_pages: {total_pages}\n"
+        f"  successful_pages: {successful}\n"
+        f"  failed_pages: {failed}\n"
+    )
+    (pdf_dir / f"{pdf_name}.validation.yaml").write_text(content, encoding="utf-8")
+
+
+def test_marco_checker_strict_mode_passes_above_thresholds(tmp_path):
+    delivery = tmp_path / "final-delivery"
+    delivery.mkdir()
+    output = tmp_path / "output"
+    _write_validation_yaml(
+        output,
+        "A",
+        yaml_insertion_rate=1.0,
+        average_confidence=0.9,
+        page_success_rate=0.98,
+        total_pages=20,
+    )
+    result = MarcoChecker().run(delivery)
+    assert result.stats["mode"] == "strict"
+    assert "A" in result.stats["compliant"]
+    assert result.stats["compliance_rate"] == 100.0
+    assert result.passed
+
+
+def test_marco_checker_strict_mode_flags_page_success_below_threshold(tmp_path):
+    delivery = tmp_path / "final-delivery"
+    delivery.mkdir()
+    output = tmp_path / "output"
+    _write_validation_yaml(
+        output,
+        "A_Reforma",
+        yaml_insertion_rate=1.0,
+        average_confidence=0.9,
+        page_success_rate=0.6667,
+        total_pages=27,
+    )
+    result = MarcoChecker().run(delivery)
+    assert result.stats["mode"] == "strict"
+    assert "A_Reforma" in result.stats["non_compliant"]
+    assert not result.passed
+    assert any("page_success_rate" in i["message"] for i in result.issues)
+    assert result.stats["per_pdf"]["A_Reforma"]["failed_pages"] == 9
+
+
+def test_marco_checker_strict_mode_flags_confidence_below_threshold(tmp_path):
+    delivery = tmp_path / "final-delivery"
+    delivery.mkdir()
+    output = tmp_path / "output"
+    _write_validation_yaml(
+        output,
+        "B",
+        yaml_insertion_rate=1.0,
+        average_confidence=0.6,
+        page_success_rate=0.99,
+    )
+    result = MarcoChecker().run(delivery)
+    assert not result.passed
+    assert any("average_confidence" in i["message"] for i in result.issues)
+
+
+def test_marco_checker_falls_back_to_structural_when_no_validation_yaml(tmp_path):
+    delivery = tmp_path / "final-delivery"
+    delivery.mkdir()
+    _seed(delivery, "A", "## Page 1\n\nbody\n")
+    result = MarcoChecker().run(delivery)
+    assert result.stats["mode"] == "structural"
+    assert "A" in result.stats["compliant"]
+
+
+def test_marco_checker_strict_partial_compliance(tmp_path):
+    delivery = tmp_path / "final-delivery"
+    delivery.mkdir()
+    output = tmp_path / "output"
+    _write_validation_yaml(
+        output,
+        "good",
+        yaml_insertion_rate=1.0,
+        average_confidence=0.9,
+        page_success_rate=0.99,
+    )
+    _write_validation_yaml(
+        output,
+        "bad",
+        yaml_insertion_rate=1.0,
+        average_confidence=0.9,
+        page_success_rate=0.5,
+    )
+    result = MarcoChecker().run(delivery)
+    assert result.stats["compliance_rate"] == 50.0
+    assert "good" in result.stats["compliant"]
+    assert "bad" in result.stats["non_compliant"]

@@ -543,26 +543,133 @@ _TITLE_RE = re.compile(r"^# ", re.MULTILINE)
 
 
 class MarcoChecker(Checker):
-    """Composite MARCO compliance per file. Maps F.1 inventory F1.
+    """MARCO compliance per PDF. Maps F.1 inventory F1.
 
-    A file is compliant if all three hold:
-    - Has a sibling YAML file (``{stem}.yaml``)
-    - Has at least one ``# title`` header
-    - Has at least one ``## Page N`` header
+    Two modes, chosen by data availability:
+
+    **Strict (KQI)** — when ``output_dir/*/{name}.validation.yaml`` files
+    exist, applies the three thresholds from ``docs/MARCO_QUALITY_SPECIFICATION.md``:
+    ``yaml_insertion_rate >= 0.95``, ``average_confidence >= 0.85``,
+    ``page_success_rate >= 0.95``. A failing PDF emits a blocking issue per
+    failed metric.
+
+    **Structural fallback** — when no ``.validation.yaml`` is found (test
+    fixtures, legacy deliveries), checks per ``.md`` in ``target``: has
+    sibling YAML, ``# title``, and ``## Page N``.
+
+    ``output_dir`` defaults to ``target.parent / "output"`` (the layout
+    produced by ``orchestrator.py``).
     """
 
     name = "marco_compliance"
 
+    def __init__(
+        self,
+        *,
+        output_dir: Optional[Path] = None,
+        yaml_insertion_min: float = 0.95,
+        confidence_min: float = 0.85,
+        page_success_min: float = 0.95,
+    ) -> None:
+        self.output_dir = output_dir
+        self.yaml_insertion_min = yaml_insertion_min
+        self.confidence_min = confidence_min
+        self.page_success_min = page_success_min
+
     def run(self, target: Path) -> CheckResult:
         result = CheckResult(name=self.name)
+        output_dir = self.output_dir if self.output_dir else (target.parent / "output")
+        validation_files = (
+            sorted(output_dir.glob("*/*.validation.yaml"))
+            if output_dir.exists()
+            else []
+        )
+        if validation_files:
+            return self._run_strict(validation_files, result)
+        return self._run_structural(target, result)
+
+    def _run_strict(
+        self, validation_files: List[Path], result: CheckResult
+    ) -> CheckResult:
+        per_pdf: Dict[str, Dict[str, Any]] = {}
+        compliant: List[str] = []
+        non_compliant: List[str] = []
+
+        for vf in validation_files:
+            pdf_stem = vf.stem[: -len(".validation")] if vf.stem.endswith(
+                ".validation"
+            ) else vf.stem
+            try:
+                data = yaml.safe_load(vf.read_text(encoding="utf-8")) or {}
+            except Exception as e:
+                result.add_warning(pdf_stem, f"Cannot parse {vf.name}: {e}")
+                continue
+
+            kqi = data.get("kqi_metrics", {}) or {}
+            stats = data.get("page_statistics", {}) or {}
+            yir = float(kqi.get("yaml_insertion_rate", 0) or 0)
+            avg_conf = float(kqi.get("average_confidence", 0) or 0)
+            psr = float(kqi.get("page_success_rate", 0) or 0)
+            failures: List[str] = []
+            if yir < self.yaml_insertion_min:
+                failures.append(
+                    f"yaml_insertion_rate={yir:.2%} < {self.yaml_insertion_min:.0%}"
+                )
+            if avg_conf < self.confidence_min:
+                failures.append(
+                    f"average_confidence={avg_conf:.2f} < {self.confidence_min:.2f}"
+                )
+            if psr < self.page_success_min:
+                failures.append(
+                    f"page_success_rate={psr:.2%} < {self.page_success_min:.0%} "
+                    f"({stats.get('failed_pages', 0)} failed / "
+                    f"{stats.get('total_pages', 0)} total)"
+                )
+
+            per_pdf[pdf_stem] = {
+                "yaml_insertion_rate": round(yir, 4),
+                "average_confidence": round(avg_conf, 4),
+                "page_success_rate": round(psr, 4),
+                "failed_pages": stats.get("failed_pages", 0),
+                "total_pages": stats.get("total_pages", 0),
+                "compliant": not failures,
+                "failures": failures,
+            }
+            if failures:
+                non_compliant.append(pdf_stem)
+                for msg in failures:
+                    result.add_issue(pdf_stem, msg)
+            else:
+                compliant.append(pdf_stem)
+
+        total = len(validation_files)
         result.stats.update(
             {
+                "mode": "strict",
+                "per_pdf": per_pdf,
+                "compliant": compliant,
+                "non_compliant": non_compliant,
+                "compliance_rate": round(len(compliant) / total * 100, 1)
+                if total
+                else 0.0,
+                "thresholds": {
+                    "yaml_insertion_min": self.yaml_insertion_min,
+                    "confidence_min": self.confidence_min,
+                    "page_success_min": self.page_success_min,
+                },
+            }
+        )
+        return result
+
+    def _run_structural(self, target: Path, result: CheckResult) -> CheckResult:
+        result.stats.update(
+            {
+                "mode": "structural",
                 "compliant": [],
                 "non_compliant": [],
                 "compliance_rate": 0.0,
             }
         )
-
         md_files = _md_files_in(target)
         for md_file in md_files:
             try:
@@ -570,14 +677,12 @@ class MarcoChecker(Checker):
             except Exception as e:
                 result.add_issue(md_file.stem, f"Cannot read {md_file.name}: {e}")
                 continue
-
             yaml_file = target / f"{md_file.stem}.yaml"
             checks = {
                 "has_yaml": yaml_file.exists(),
                 "has_title": bool(_TITLE_RE.search(content)),
                 "has_page_headers": bool(_PAGE_HEADER_RE.search(content)),
             }
-
             if all(checks.values()):
                 result.stats["compliant"].append(md_file.stem)
             else:
@@ -587,11 +692,9 @@ class MarcoChecker(Checker):
                         "missing": [k for k, v in checks.items() if not v],
                     }
                 )
-
         if md_files:
             result.stats["compliance_rate"] = round(
                 len(result.stats["compliant"]) / len(md_files) * 100,
                 1,
             )
-
         return result

@@ -107,9 +107,12 @@ echo "sk-xxxx" > api/keys.txt
 # Forçar reinício
 ./run.sh --restart
 
+# Pular o gate de qualidade MARCO (Step 5.5) — entrega mesmo com PDFs abaixo do threshold
+./run.sh --no-quality-gate
+
 # Bypass do run.sh (útil para tooling/JSON status)
 python orchestrator.py status [--json]
-python orchestrator.py run [--restart] [--retry-failed] [-t TASK_NAME]
+python orchestrator.py run [--restart] [--retry-failed] [--no-quality-gate] [-t TASK_NAME]
 ```
 
 ### Processamento de Fichas (Etapa 2)
@@ -149,7 +152,7 @@ A skill é definida em `.claude/skills/convert-book/SKILL.md` (driver + prompt L
 ### Testes
 
 ```bash
-pytest tests/                                   # Suite completa (194 passed, 0 xfail)
+pytest tests/                                   # Suite completa (202 passed, 0 xfail)
 pytest tests/test_snapshot.py                   # Goldens da Etapa 2 (ficha + livro)
 UPDATE_GOLDENS=1 pytest tests/test_snapshot.py  # Re-baseline goldens (exige justificativa no commit)
 ```
@@ -249,7 +252,7 @@ iaraa-ragflow/
 ├── docs/
 │   └── adr/                           # 0001, 0002, 0003
 │
-└── tests/                             # pytest (194 passed, 0 xfail)
+└── tests/                             # pytest (202 passed, 0 xfail)
     ├── fixtures/
     ├── golden/                        # Snapshots (ficha + livro)
     └── test_*.py

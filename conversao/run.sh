@@ -35,6 +35,7 @@ RETRY_FAILED=false
 TASK_NAME=""
 MONITOR=false
 LIST_HISTORY=false
+NO_QUALITY_GATE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -62,6 +63,10 @@ while [[ $# -gt 0 ]]; do
             LIST_HISTORY=true
             shift
             ;;
+        --no-quality-gate)
+            NO_QUALITY_GATE=true
+            shift
+            ;;
         --help|-h)
             cat <<'EOF'
 
@@ -74,6 +79,7 @@ while [[ $# -gt 0 ]]; do
   --task-name, -t   设置任务名称 (用于监控和归档)
   --monitor, -m     启用后台资源监控
   --history         列出历史任务记录
+  --no-quality-gate 跳过 Step 4.5 MARCO 质量门 (允许低质量交付)
   --help, -h        显示此帮助信息
 
 环境变量:
@@ -190,6 +196,9 @@ if [ "$RESTART" = true ]; then
 fi
 if [ "$RETRY_FAILED" = true ]; then
     ORCHESTRATOR_ARGS+=("--retry-failed")
+fi
+if [ "$NO_QUALITY_GATE" = true ]; then
+    ORCHESTRATOR_ARGS+=("--no-quality-gate")
 fi
 
 # Disable set -e so the orchestrator's exit code propagates verbatim.
