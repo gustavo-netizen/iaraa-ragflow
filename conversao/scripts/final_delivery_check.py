@@ -29,6 +29,7 @@ if str(_CONVERSAO_DIR) not in sys.path:
 
 from validation.checkers import (  # noqa: E402
     ContentSyntaxChecker,
+    MarcoChecker,
     MarkdownChecker,
     StructureChecker,
 )
@@ -133,6 +134,7 @@ def main() -> int:
         StructureChecker(expected_count=args.expected_count),
         ContentSyntaxChecker(),
         MarkdownChecker(),
+        MarcoChecker(),
     ])
     report = pipeline.run(target)
 

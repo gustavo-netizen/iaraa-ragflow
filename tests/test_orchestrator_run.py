@@ -591,6 +591,87 @@ def test_run_step9_failure_is_silenced(root: Path, monkeypatch):
     assert rc == 0
 
 
+def _seed_validation_yaml(
+    root: Path,
+    pdf_name: str,
+    *,
+    overall_pass: bool,
+    page_success_rate: float = 1.0,
+    total_pages: int = 10,
+) -> None:
+    """Write `output/{pdf_name}/{pdf_name}.validation.yaml` to drive the gate."""
+    pdf_dir = root / "output" / pdf_name
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    failed = round(total_pages * (1 - page_success_rate))
+    content = (
+        "document_info:\n"
+        f"  filename: {pdf_name}.pdf\n"
+        f"  total_pages: {total_pages}\n"
+        "kqi_metrics:\n"
+        "  yaml_insertion_rate: 1.0\n"
+        "  yaml_insertion_pass: true\n"
+        "  average_confidence: 0.9\n"
+        "  confidence_pass: true\n"
+        f"  page_success_rate: {page_success_rate}\n"
+        f"  overall_quality_pass: {'true' if overall_pass else 'false'}\n"
+        "page_statistics:\n"
+        f"  total_pages: {total_pages}\n"
+        f"  failed_pages: {failed}\n"
+    )
+    (pdf_dir / f"{pdf_name}.validation.yaml").write_text(content, encoding="utf-8")
+
+
+def test_quality_gate_aborts_when_overall_quality_pass_false(root: Path, patch_popen):
+    """Gate failure aborts pipeline before Step 5 and leaves progress.json untouched."""
+    (root / "input" / "bad.pdf").write_bytes(b"%PDF-fake")
+    _seed_validation_yaml(
+        root, "bad", overall_pass=False, page_success_rate=0.65, total_pages=27
+    )
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc != 0
+    # Steps 5-9 must not run (no postprocess/quality/final/report invocations)
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    assert "postprocess.py" not in scripts_invoked
+    assert "final_delivery_check.py" not in scripts_invoked
+    assert "generate_quality_report.py" not in scripts_invoked
+    assert "generate_report.py" not in scripts_invoked
+
+
+def test_quality_gate_passes_when_all_overall_quality_pass_true(
+    root: Path, patch_popen
+):
+    """All validation.yaml passing lets the pipeline reach Steps 5-9."""
+    (root / "input" / "good.pdf").write_bytes(b"%PDF-fake")
+    _seed_validation_yaml(root, "good", overall_pass=True, page_success_rate=0.99)
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc == 0
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    assert "postprocess.py" in scripts_invoked
+    assert "final_delivery_check.py" in scripts_invoked
+
+
+def test_quality_gate_skipped_by_no_quality_gate_flag(root: Path, patch_popen):
+    """--no-quality-gate lets a failing run continue to Step 5+."""
+    (root / "input" / "bad.pdf").write_bytes(b"%PDF-fake")
+    _seed_validation_yaml(
+        root, "bad", overall_pass=False, page_success_rate=0.65, total_pages=27
+    )
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run(RunOptions(quality_gate=False))
+
+    assert rc == 0
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    assert "postprocess.py" in scripts_invoked
+    assert "final_delivery_check.py" in scripts_invoked
+
+
 def test_archive_and_reset_runs_admin_script(root: Path, patch_popen):
     """--restart with existing progress.json invokes archive_progress.py."""
     progress = root / "progress.json"
