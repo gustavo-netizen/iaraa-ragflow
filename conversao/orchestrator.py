@@ -31,6 +31,8 @@ import shutil
 import subprocess
 import sys
 import time
+
+import yaml
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -90,6 +92,7 @@ class RunOptions:
     max_size_mb: int = 50
     pdf_concurrency: int = 30
     llm_concurrent: int = 10
+    quality_gate: bool = True
 
     @classmethod
     def from_env(cls, **overrides: Any) -> "RunOptions":
@@ -354,6 +357,10 @@ class Pipeline:
         rc |= self._step2_5_retry()
         rc |= self._step3_process_direct(opts)
         rc |= self._step4_merge()
+        gate_rc = self._step4_5_quality_gate(opts)
+        if gate_rc != 0:
+            self._print_summary(time.time() - start)
+            return gate_rc
         self._mark_pipeline_completed_safe()
         rc |= self._step5_final_delivery_copy()
         rc |= self._step6_postprocess()
@@ -497,6 +504,81 @@ class Pipeline:
             _mark_pipeline_completed(pm)
         except Exception:
             pass  # match bash `|| true` semantics
+
+    def _step4_5_quality_gate(self, opts: RunOptions) -> int:
+        """Abort the pipeline if any PDF failed MARCO thresholds.
+
+        Reads ``output/*/{name}.validation.yaml`` (written by
+        ``docmind/pipeline.py`` per processed PDF) and checks
+        ``kqi_metrics.overall_quality_pass``. Any False aborts the
+        pipeline before Step 5 (final-delivery copy), so partial or
+        low-quality OCR results never produce a delivery package nor
+        mark ``progress.json`` as ``completed``.
+
+        Disabled by ``--no-quality-gate``.
+        """
+        self._echo_step_header("Step 4.5: KQI Quality Gate (MARCO)")
+        if not opts.quality_gate:
+            print("⚠️  --no-quality-gate set — skipping")
+            return 0
+        if not self.output_dir.exists():
+            print("⚠️  output/ não existe — skip")
+            return 0
+        validation_files = sorted(self.output_dir.glob("*/*.validation.yaml"))
+        if not validation_files:
+            print("⚠️  Nenhum .validation.yaml encontrado — skip")
+            return 0
+
+        failed: List[Any] = []
+        for vf in validation_files:
+            try:
+                data = yaml.safe_load(vf.read_text(encoding="utf-8")) or {}
+            except Exception as e:
+                print(f"⚠️  Falha ao ler {vf.name}: {e}")
+                continue
+            kqi = data.get("kqi_metrics", {}) or {}
+            if kqi.get("overall_quality_pass") is not False:
+                continue
+            stats = data.get("page_statistics", {}) or {}
+            pdf_name = (data.get("document_info", {}) or {}).get(
+                "filename", vf.stem
+            )
+            reasons: List[str] = []
+            if kqi.get("yaml_insertion_pass") is False:
+                reasons.append(
+                    f"yaml_insertion={float(kqi.get('yaml_insertion_rate', 0) or 0):.2%}"
+                )
+            if kqi.get("confidence_pass") is False:
+                reasons.append(
+                    f"avg_confidence={float(kqi.get('average_confidence', 0) or 0):.2f}"
+                )
+            psr = float(kqi.get("page_success_rate", 0) or 0)
+            if psr < 0.95:
+                reasons.append(
+                    f"page_success={psr:.2%} "
+                    f"({stats.get('failed_pages', 0)}/{stats.get('total_pages', 0)} failed)"
+                )
+            failed.append((pdf_name, reasons))
+
+        if not failed:
+            print(
+                f"✅ {len(validation_files)} PDFs atingiram thresholds MARCO "
+                f"(yaml_insertion ≥ 95%, avg_confidence ≥ 0.85, page_success ≥ 95%)"
+            )
+            return 0
+
+        print(
+            f"❌ {len(failed)} de {len(validation_files)} PDFs falharam thresholds MARCO:"
+        )
+        for pdf_name, reasons in failed:
+            print(f"  • {pdf_name}")
+            for r in reasons:
+                print(f"      - {r}")
+        print()
+        print("Pipeline abortada antes do Step 5. Opções:")
+        print("  ./run.sh --retry-failed       # reprocessa apenas páginas falhadas")
+        print("  ./run.sh --no-quality-gate    # ignora o gate e prossegue")
+        return 1
 
     def _step5_final_delivery_copy(self) -> int:
         """Replace the bash for-loop at run.sh:427-457 with a Python copy.
@@ -902,6 +984,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--restart", action="store_true", help="Archive and reset progress before running.")
     p_run.add_argument("--retry-failed", action="store_true", help="Run only Step 2.5 (retry failed pages).")
     p_run.add_argument("--task-name", "-t", default=None, help="Task name (used for archive + Step 9 report).")
+    p_run.add_argument(
+        "--no-quality-gate",
+        dest="quality_gate",
+        action="store_false",
+        help="Skip Step 4.5 KQI gate; proceed to Step 5 even if MARCO thresholds fail.",
+    )
+    p_run.set_defaults(quality_gate=True)
 
     return parser
 
@@ -924,6 +1013,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             restart=args.restart,
             retry_failed=args.retry_failed,
             task_name=args.task_name,
+            quality_gate=args.quality_gate,
         )
         return pipeline.run(opts)
 

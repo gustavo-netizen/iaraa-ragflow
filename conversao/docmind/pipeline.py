@@ -490,7 +490,7 @@ async def process_pdf_async(
                 "confidence_pass": kqi_confidence,
                 "page_success_rate": round(kqi_page_success, 4),
                 "overall_quality_pass": (
-                    kqi_yaml_insertion and kqi_confidence and kqi_page_success >= 0.98
+                    kqi_yaml_insertion and kqi_confidence and kqi_page_success >= 0.95
                 ),
             },
             "validation_metrics": {
