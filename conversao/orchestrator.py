@@ -352,7 +352,17 @@ class Pipeline:
         start = time.time()
 
         rc = 0
-        rc |= self._step1_split(opts)
+        step1_rc = self._step1_split(opts)
+        if step1_rc != 0:
+            print(
+                "\n❌ Step 1 (split) falhou — pipeline abortada antes do Step 2."
+            )
+            self._print_summary(time.time() - start)
+            return step1_rc
+        guard_rc = self._validate_split_mapping_or_abort()
+        if guard_rc != 0:
+            self._print_summary(time.time() - start)
+            return guard_rc
         rc |= self._step2_process_chunks(opts)
         rc |= self._step2_5_retry()
         rc |= self._step3_process_direct(opts)
@@ -389,6 +399,39 @@ class Pipeline:
             f"Step 1: 智能分割大PDF (>{opts.max_pages_per_chunk} 页或 >{opts.max_size_mb} MB)",
             self._step1_cmd(opts),
         )
+
+    def _validate_split_mapping_or_abort(self) -> int:
+        """Defesa em profundidade: aborta se mapping marcar algum PDF como erro.
+
+        ``_step1_split`` já curto-circuita o pipeline quando o splitter
+        retorna rc=1, mas o mapping pode ter sido editado manualmente ou
+        o splitter rodado fora desta sessão. Esta checagem lê
+        ``stats.pdfs`` e aborta se algum entry tem ``status='error'``.
+        """
+        if not self.split_mapping_path.exists():
+            return 0
+        try:
+            with open(self.split_mapping_path, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return 0
+        pdfs = (mapping.get("stats", {}) or {}).get("pdfs", {}) or {}
+        errored = [
+            name
+            for name, info in pdfs.items()
+            if isinstance(info, dict) and info.get("status") == "error"
+        ]
+        if not errored:
+            return 0
+        print(
+            f"\n❌ split_mapping.json marca {len(errored)} PDF(s) com status='error':"
+        )
+        for name in sorted(errored):
+            error_msg = pdfs[name].get("error", "(sem mensagem)")
+            print(f"  • {name}: {error_msg}")
+        print()
+        print("Pipeline abortada antes do Step 2 — corrija ou remova os PDFs.")
+        return 1
 
     def _step2_cmd(self, opts: RunOptions) -> List[str]:
         return [

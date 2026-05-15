@@ -672,6 +672,59 @@ def test_quality_gate_skipped_by_no_quality_gate_flag(root: Path, patch_popen):
     assert "final_delivery_check.py" in scripts_invoked
 
 
+def test_step1_failure_short_circuits_pipeline(root: Path, monkeypatch):
+    """rc=1 from Step 1 (splitter) must skip every downstream step."""
+    (root / "input" / "smoke.pdf").write_bytes(b"%PDF-fake")
+
+    class Step1Fails(_RecordingPopen):
+        def wait(self, timeout: Optional[float] = None) -> int:
+            cmd_name = Path(self.cmd[1]).name if len(self.cmd) > 1 else ""
+            self.returncode = 1 if cmd_name == "split_large_pdfs_smart.py" else 0
+            return self.returncode
+
+    import orchestrator as orch
+    _RecordingPopen.reset()
+    monkeypatch.setattr(orch.subprocess, "Popen", Step1Fails)
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc == 1
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in _RecordingPopen.invocations]
+    # Only Step 1 was attempted; no Step 2/2.5/3/4/5/6/7/8/9.
+    assert scripts_invoked == ["split_large_pdfs_smart.py"]
+
+
+def test_validate_split_mapping_aborts_on_status_error(root: Path, patch_popen):
+    """Pre-Step-2 guard: split_mapping marking a PDF as status=error aborts run."""
+    (root / "input" / "smoke.pdf").write_bytes(b"%PDF-fake")
+    mapping = root / "input" / "split_pdfs" / "split_mapping.json"
+    mapping.write_text(
+        json.dumps(
+            {
+                "stats": {
+                    "pdfs": {
+                        "broken.pdf": {
+                            "status": "error",
+                            "error": "Invalid Elementary Object",
+                        }
+                    }
+                },
+                "chunks": [],
+                "direct": [],
+            }
+        )
+    )
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc == 1
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    # Only Step 1 ran (subprocess was patched to rc=0); guard then aborted.
+    assert scripts_invoked == ["split_large_pdfs_smart.py"]
+
+
 def test_quality_gate_aborts_when_validation_count_mismatch(
     root: Path, patch_popen
 ):

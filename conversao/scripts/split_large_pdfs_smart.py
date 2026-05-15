@@ -54,36 +54,53 @@ def split_pdf(pdf_path, output_dir, max_pages_per_chunk=50, max_size_mb_per_chun
     print(f"         Each chunk: ~{pages_per_chunk} pages, ~{size_per_chunk:.1f}M")
 
     chunks = []
-    for chunk_idx in range(num_chunks):
-        start_page = chunk_idx * pages_per_chunk
-        end_page = min((chunk_idx + 1) * pages_per_chunk, total_pages)
+    # Write to *.pdf.tmp and rename to *.pdf only after writer.write() returns.
+    # If split fails midway, all unrenamed .tmp files are unlinked so reruns
+    # don't pick up partial chunks. Final .pdf files from earlier iterations
+    # are left in place — the caller decides whether to keep or restart.
+    tmp_paths = []
+    try:
+        for chunk_idx in range(num_chunks):
+            start_page = chunk_idx * pages_per_chunk
+            end_page = min((chunk_idx + 1) * pages_per_chunk, total_pages)
 
-        # Create output filename
-        base_name = pdf_path.stem
-        chunk_name = f"{base_name}_part{chunk_idx+1}of{num_chunks}.pdf"
-        chunk_path = output_dir / chunk_name
+            # Create output filename
+            base_name = pdf_path.stem
+            chunk_name = f"{base_name}_part{chunk_idx+1}of{num_chunks}.pdf"
+            chunk_path = output_dir / chunk_name
+            tmp_path = Path(str(chunk_path) + ".tmp")
+            tmp_paths.append(tmp_path)
 
-        # Create chunk PDF
-        writer = PdfWriter()
-        for page_num in range(start_page, end_page):
-            writer.add_page(reader.pages[page_num])
+            # Create chunk PDF
+            writer = PdfWriter()
+            for page_num in range(start_page, end_page):
+                writer.add_page(reader.pages[page_num])
 
-        with open(chunk_path, 'wb') as f:
-            writer.write(f)
+            with open(tmp_path, 'wb') as f:
+                writer.write(f)
+            tmp_path.replace(chunk_path)
 
-        chunk_size = chunk_path.stat().st_size / (1024 * 1024)
-        chunks.append({
-            'path': str(chunk_path),
-            'chunk_idx': chunk_idx + 1,
-            'total_chunks': num_chunks,
-            'start_page': start_page + 1,  # 1-indexed
-            'end_page': end_page,
-            'pages': end_page - start_page,
-            'size_mb': round(chunk_size, 1),
-            'original_pdf': str(pdf_path)
-        })
+            chunk_size = chunk_path.stat().st_size / (1024 * 1024)
+            chunks.append({
+                'path': str(chunk_path),
+                'chunk_idx': chunk_idx + 1,
+                'total_chunks': num_chunks,
+                'start_page': start_page + 1,  # 1-indexed
+                'end_page': end_page,
+                'pages': end_page - start_page,
+                'size_mb': round(chunk_size, 1),
+                'original_pdf': str(pdf_path)
+            })
 
-        print(f"         ✅ Chunk {chunk_idx+1}/{num_chunks}: pages {start_page+1}-{end_page} ({chunk_size:.1f}M)")
+            print(f"         ✅ Chunk {chunk_idx+1}/{num_chunks}: pages {start_page+1}-{end_page} ({chunk_size:.1f}M)")
+    except Exception:
+        for tp in tmp_paths:
+            if tp.exists():
+                try:
+                    tp.unlink()
+                except OSError:
+                    pass
+        raise
 
     return chunks
 
@@ -157,6 +174,7 @@ def main():
         'total_pdfs': len(pdf_files),
         'split_pdfs': 0,
         'skipped_pdfs': 0,
+        'error_pdfs': 0,
         'total_chunks': 0,
         'pdfs': {}
     }
@@ -207,11 +225,12 @@ def main():
                     'status': 'skip'
                 }
         except Exception as e:
-            print(f"\n  ❌ Error processing {pdf_file.name}: {e}")
+            print(f"\n  ❌ Error processing {pdf_file.name}: {e}", file=sys.stderr)
             stats['pdfs'][pdf_file.name] = {
                 'error': str(e),
                 'status': 'error'
             }
+            stats['error_pdfs'] += 1
 
     # Save mapping
     with open(mapping_file, 'w') as f:
@@ -225,9 +244,13 @@ def main():
             ]
         }, f, indent=2)
 
+    had_errors = stats['error_pdfs'] > 0
+
     # 更新进度管理器
     if progress_manager:
-        progress_manager.set_step_status('split', 'completed')
+        progress_manager.set_step_status(
+            'split', 'failed' if had_errors else 'completed'
+        )
         # 设置待处理的PDF列表
         chunk_pdfs = [Path(c['path']).stem for c in all_chunks]
         direct_pdfs = [Path(name).stem for name, info in stats['pdfs'].items() if info.get('status') == 'skip']
@@ -238,14 +261,21 @@ def main():
 
     print()
     print("="*80)
-    print("✅ Splitting Complete")
+    if had_errors:
+        print(f"❌ Splitting Incomplete — {stats['error_pdfs']} PDF(s) failed")
+    else:
+        print("✅ Splitting Complete")
     print("="*80)
     print(f"Total PDFs: {stats['total_pdfs']}")
     print(f"Split PDFs: {stats['split_pdfs']}")
     print(f"Skipped PDFs: {stats['skipped_pdfs']}")
+    print(f"Error PDFs: {stats['error_pdfs']}")
     print(f"Total chunks created: {stats['total_chunks']}")
     print(f"Mapping saved to: {mapping_file}")
     print()
+
+    return 1 if had_errors else 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
