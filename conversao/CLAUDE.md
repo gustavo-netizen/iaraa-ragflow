@@ -8,6 +8,13 @@ DocMind is **Stage 1** of the iaraa-ragflow pipeline. It converts PDFs to Markdo
 
 After Fase G, the pipeline is orchestrated in Python (`conversao/orchestrator.py`). `run.sh` is a thin wrapper (~207 lines) that loads API keys, spawns the monitor daemon, handles `--history`/`--no-quality-gate`, then delegates to `python orchestrator.py run [...]`. Operators see no behavior change; the CLI surface is preserved.
 
+## System Dependencies
+
+Two C libraries are required alongside the Python packages in `requirements.txt`:
+
+- **poppler** — consumed by `pdf2image` (PDF → PNG rasterization). `brew install poppler` (macOS) / `apt install poppler-utils` (Linux).
+- **libqpdf** — consumed by `pikepdf` (PDF splitting in `scripts/split_large_pdfs_smart.py`). `brew install qpdf` (macOS) / `apt install libqpdf-dev` (Linux). pikepdf replaced PyPDF2 in Fase 3 of `PLANO_BUGFIXES_QUALITY_GATE.md` because libqpdf's C parser silently recovers from minor PDF damage (truncated trailers, off-spec headers) that PyPDF2's pure-Python parser rejects.
+
 ## Essential Commands
 
 ```bash
@@ -215,6 +222,40 @@ notes:
 ```
 
 Quando o sidecar existe e tem notes, o metadata header do MD ganha um marker `*Footnotes: sidecar*` (signal redundante caso o `.md` se separe do `.yaml`).
+
+### Mapping Schema (`split_mapping.json`)
+
+Escrito pelo Step 1 (`split_large_pdfs_smart.py`) e consumido por todos os steps abaixo. **Três campos top-level com leitores diferentes** — não tratar como um schema único:
+
+```json
+{
+  "stats": {
+    "total_pdfs": 10,
+    "split_pdfs": 7,
+    "skipped_pdfs": 3,
+    "error_pdfs": 0,
+    "total_chunks": 42,
+    "pdfs": {
+      "Foo.pdf":     {"pages": 120, "size_mb": 18.4, "chunks": 3, "status": "split"},
+      "Bar.pdf":     {"pages":  30, "size_mb":  4.2, "chunks": 0, "status": "skip"},
+      "Broken.pdf":  {"error": "Invalid Elementary Object", "status": "error"}
+    }
+  },
+  "chunks": [
+    {"path": "...", "chunk_idx": 1, "total_chunks": 3, "pages": 50,
+     "start_page": 1, "end_page": 50, "size_mb": 7.1, "original_pdf": "Foo.pdf"}
+  ],
+  "direct": [
+    {"pdf_path": "/abs/path/Bar.pdf", "pdf_name": "Bar.pdf"}
+  ]
+}
+```
+
+- **`stats.pdfs[name].status`** ∈ `{split, skip, error}`. Consumido por `orchestrator._validate_split_mapping_or_abort` (pre-Step-2 guard, ADR-0005) — qualquer `status == 'error'` aborta o pipeline antes do Step 2. Bloco humanamente legível: cada PDF que entrou em `input/` aparece aqui, com diagnóstico.
+- **`stats.error_pdfs`** (Fase 2 do `PLANO_BUGFIXES_QUALITY_GATE.md`): contador agregado usado pelo `main()` para decidir `set_step_status('split', 'failed')` e rc=1.
+- **`chunks[]` / `direct[]`** são os campos canônicos consumidos por `Document.discover` (`docmind/document.py`). Apenas PDFs que tiveram split bem-sucedido aparecem em `chunks[]`; PDFs abaixo do threshold em `direct[]`. **PDFs com `status='error'` não aparecem em nenhum dos dois** — por isso o guard precisa ler `stats.pdfs` para detectá-los.
+
+Regra: para enumerar PDFs **que vão ser processados** use `Document.discover`. Para enumerar PDFs **que o operador submeteu**, ou para detectar erros do splitter, leia `stats.pdfs`.
 
 ### API Configuration
 

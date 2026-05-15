@@ -12,6 +12,8 @@ Um ADR existe para travar uma decisão que afeta o futuro do código — não pa
 | [0002](0002-book-converter-llm-agnostic.md) | `book_converter` é LLM-agnostic — recebe resposta pré-computada | Accepted |
 | [0003](0003-progress-storage-json-filelock.md) | Progress storage permanece JSON + FileLock (não SQLite) | Accepted |
 | [0004](0004-footnotes-sidecar-yaml.md) | Footnotes em sidecar YAML separado (`<name>.footnotes.yaml`) | Accepted |
+| [0005](0005-splitter-strict-mode.md) | Splitter aborta o pipeline quando qualquer PDF falha | Accepted |
+| [0006](0006-pikepdf-for-pdf-split.md) | pikepdf (libqpdf) substitui PyPDF2 no splitter | Accepted |
 
 ## Convenções
 

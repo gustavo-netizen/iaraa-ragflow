@@ -22,7 +22,7 @@ _CONVERSAO_DIR = _SCRIPT_DIR.parent
 if str(_CONVERSAO_DIR) not in sys.path:
     sys.path.insert(0, str(_CONVERSAO_DIR))
 
-from docmind.document import Chunk, Document  # noqa: E402
+from docmind.document import Chunk, Document, aggregate_chunk_validations  # noqa: E402
 
 
 def merge_document(document: Document, results_dir: Path) -> Dict[str, Any]:
@@ -42,6 +42,7 @@ def merge_document(document: Document, results_dir: Path) -> Dict[str, Any]:
     chunks_success = 0
     chunks_missing_dir = 0
     chunks_missing_md = 0
+    chunk_offsets: List[int] = []  # offset used for each successful chunk (in order)
 
     for chunk in chunks:
         chunk_result_dir = results_dir / chunk.name
@@ -66,6 +67,7 @@ def merge_document(document: Document, results_dir: Path) -> Dict[str, Any]:
         chunk_md = chunk_md_files[0]
         with open(chunk_md, "r", encoding="utf-8") as f:
             content = f.read()
+        chunk_offsets.append(page_offset)
 
         if len(content.strip()) < 100:
             print(
@@ -148,6 +150,14 @@ def merge_document(document: Document, results_dir: Path) -> Dict[str, Any]:
     with open(document.yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(all_yaml_metadata, f, allow_unicode=True, sort_keys=False)
 
+    _emit_aggregated_validation(
+        document=document,
+        chunks=chunks,
+        chunk_offsets=chunk_offsets,
+        results_dir=results_dir,
+        chunks_failed=chunks_failed,
+    )
+
     if chunks_failed > 0:
         print(
             f"      ⚠️  Merged: {chunks_success}/{len(chunks)} chunks, "
@@ -167,6 +177,76 @@ def merge_document(document: Document, results_dir: Path) -> Dict[str, Any]:
         "total_pages": page_offset,
         "success": True,
     }
+
+
+def _emit_aggregated_validation(
+    *,
+    document: Document,
+    chunks: List[Chunk],
+    chunk_offsets: List[int],
+    results_dir: Path,
+    chunks_failed: int,
+) -> None:
+    """Write ``<merged>.validation.yaml`` if every chunk has its own validation.
+
+    Skipped (with a warning) when any chunk failed the merge step or lacks a
+    ``.validation.yaml``. ``orchestrator._step4_5_quality_gate`` then detects
+    the absence via the ``expected_count`` mismatch instead of accepting a
+    partial aggregate.
+    """
+    if chunks_failed > 0:
+        print(
+            f"      ⚠️  Skipping aggregated validation: "
+            f"{chunks_failed} chunk(s) failed merge"
+        )
+        return
+
+    successful_chunks = [c for c in chunks if (results_dir / c.name).exists()]
+    if len(successful_chunks) != len(chunk_offsets):
+        # defensive: count drift between merge loop and offsets
+        print(
+            f"      ⚠️  Skipping aggregated validation: offset/chunk count drift "
+            f"({len(chunk_offsets)} offsets vs {len(successful_chunks)} chunks)"
+        )
+        return
+
+    chunks_data: List[dict] = []
+    missing: List[str] = []
+    for chunk in successful_chunks:
+        val_path = results_dir / chunk.name / f"{chunk.name}.validation.yaml"
+        if not val_path.exists():
+            missing.append(chunk.name)
+            continue
+        try:
+            with open(val_path, "r", encoding="utf-8") as f:
+                chunks_data.append(yaml.safe_load(f) or {})
+        except Exception as e:
+            print(f"      ⚠️  Cannot parse {val_path.name}: {e}")
+            missing.append(chunk.name)
+
+    if missing:
+        for name in missing:
+            print(f"      ⚠️  Missing .validation.yaml for chunk {name}")
+        print(
+            f"      ⚠️  Skipping aggregated validation "
+            f"({len(missing)}/{len(successful_chunks)} chunks missing)"
+        )
+        return
+
+    aggregated = aggregate_chunk_validations(
+        chunks_data,
+        chunk_offsets,
+        filename=document.pdf_path.name,
+    )
+    with open(document.validation_path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            aggregated,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
+    print(f"      ✅ Aggregated validation: {document.validation_path.name}")
 
 
 def main() -> int:

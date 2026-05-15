@@ -496,8 +496,9 @@ PLANO marcando Fase J done; CLAUDE.md root/conversao/processamento atualizadas c
 | 4 | E → F.1 + review F.1 | ✅ concluído (2026-05-04) | 3 dias |
 | 5 | F.2 → G → H | F.2 ✅ (2026-05-04); G ✅ (2026-05-05); H ✅ (2026-05-05) | 4 dias |
 | 6 | J (todas) | ✅ concluído (2026-05-07) | ~4.5h |
+| 7 | post-J fixes (PLANO_BUGFIXES_QUALITY_GATE.md, Fases 1–3) | ✅ Fases 1-3 concluídas (2026-05-15); Fase 4 (docs) em andamento; Fase 5 (smoke real) pendente | ~8h |
 
-**Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user. Sprint 6 (Fase J) entrou ~2 dias após o cierre nominal do refator H, motivada por bugs de footnote vazando em produção.
+**Total:** ~13 dias focados (~3 semanas com interrupções). Sprint 1 acelerou — A.3 paralelizada em outro terminal pelo user. Sprint 6 (Fase J) entrou ~2 dias após o cierre nominal do refator H, motivada por bugs de footnote vazando em produção. Sprint 7 nasceu da run real de 2026-05-15 que expôs cegueira do KQI gate em PDFs chunked + falha silenciosa do splitter em PDFs malformados — escopo, diagnóstico e fases detalhados em `PLANO_BUGFIXES_QUALITY_GATE.md`. ADRs 0005 (splitter strict) e 0006 (pikepdf) registram as decisões.
 
 ## Open questions — RESOLVIDAS (2026-05-04)
 

@@ -352,7 +352,17 @@ class Pipeline:
         start = time.time()
 
         rc = 0
-        rc |= self._step1_split(opts)
+        step1_rc = self._step1_split(opts)
+        if step1_rc != 0:
+            print(
+                "\n❌ Step 1 (split) falhou — pipeline abortada antes do Step 2."
+            )
+            self._print_summary(time.time() - start)
+            return step1_rc
+        guard_rc = self._validate_split_mapping_or_abort()
+        if guard_rc != 0:
+            self._print_summary(time.time() - start)
+            return guard_rc
         rc |= self._step2_process_chunks(opts)
         rc |= self._step2_5_retry()
         rc |= self._step3_process_direct(opts)
@@ -389,6 +399,39 @@ class Pipeline:
             f"Step 1: 智能分割大PDF (>{opts.max_pages_per_chunk} 页或 >{opts.max_size_mb} MB)",
             self._step1_cmd(opts),
         )
+
+    def _validate_split_mapping_or_abort(self) -> int:
+        """Defesa em profundidade: aborta se mapping marcar algum PDF como erro.
+
+        ``_step1_split`` já curto-circuita o pipeline quando o splitter
+        retorna rc=1, mas o mapping pode ter sido editado manualmente ou
+        o splitter rodado fora desta sessão. Esta checagem lê
+        ``stats.pdfs`` e aborta se algum entry tem ``status='error'``.
+        """
+        if not self.split_mapping_path.exists():
+            return 0
+        try:
+            with open(self.split_mapping_path, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return 0
+        pdfs = (mapping.get("stats", {}) or {}).get("pdfs", {}) or {}
+        errored = [
+            name
+            for name, info in pdfs.items()
+            if isinstance(info, dict) and info.get("status") == "error"
+        ]
+        if not errored:
+            return 0
+        print(
+            f"\n❌ split_mapping.json marca {len(errored)} PDF(s) com status='error':"
+        )
+        for name in sorted(errored):
+            error_msg = pdfs[name].get("error", "(sem mensagem)")
+            print(f"  • {name}: {error_msg}")
+        print()
+        print("Pipeline abortada antes do Step 2 — corrija ou remova os PDFs.")
+        return 1
 
     def _step2_cmd(self, opts: RunOptions) -> List[str]:
         return [
@@ -529,6 +572,28 @@ class Pipeline:
             print("⚠️  Nenhum .validation.yaml encontrado — skip")
             return 0
 
+        expected = _compute_expected_count(self.split_mapping_path)
+        if expected is not None and expected > len(validation_files):
+            present_stems = {
+                vf.stem[: -len(".validation")]
+                if vf.stem.endswith(".validation")
+                else vf.stem
+                for vf in validation_files
+            }
+            missing = self._missing_validation_names(present_stems)
+            print(
+                f"❌ {expected - len(validation_files)} PDFs sem .validation.yaml "
+                f"({len(validation_files)}/{expected} presentes):"
+            )
+            for name in sorted(missing):
+                print(f"  • {name}")
+            print()
+            print(
+                "Indica merge incompleto — Stage 1 não emitiu validation "
+                "para todos os PDFs chunked. Pipeline abortada."
+            )
+            return 1
+
         failed: List[Any] = []
         for vf in validation_files:
             try:
@@ -579,6 +644,27 @@ class Pipeline:
         print("  ./run.sh --retry-failed       # reprocessa apenas páginas falhadas")
         print("  ./run.sh --no-quality-gate    # ignora o gate e prossegue")
         return 1
+
+    def _missing_validation_names(self, present_stems: set) -> set:
+        """Names from split_mapping.json with no ``.validation.yaml`` on disk."""
+        if not self.split_mapping_path.exists():
+            return set()
+        try:
+            with open(self.split_mapping_path, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return set()
+        expected_stems: set = set()
+        for entry in mapping.get("chunks", []) or []:
+            if isinstance(entry, dict) and entry.get("original_pdf"):
+                expected_stems.add(Path(entry["original_pdf"]).stem)
+        for entry in mapping.get("direct", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("pdf_path") or entry.get("pdf_name")
+            if path:
+                expected_stems.add(Path(path).stem)
+        return expected_stems - present_stems
 
     def _step5_final_delivery_copy(self) -> int:
         """Replace the bash for-loop at run.sh:427-457 with a Python copy.
