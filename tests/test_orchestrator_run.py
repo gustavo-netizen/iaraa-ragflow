@@ -672,6 +672,66 @@ def test_quality_gate_skipped_by_no_quality_gate_flag(root: Path, patch_popen):
     assert "final_delivery_check.py" in scripts_invoked
 
 
+def test_quality_gate_aborts_when_validation_count_mismatch(
+    root: Path, patch_popen
+):
+    """split_mapping says 3 PDFs but only 2 .validation.yaml on disk → gate aborts."""
+    (root / "input" / "big.pdf").write_bytes(b"%PDF-fake")
+    mapping = root / "input" / "split_pdfs" / "split_mapping.json"
+    mapping.write_text(
+        json.dumps(
+            {
+                "chunks": [
+                    {"original_pdf": "big.pdf"},
+                    {"original_pdf": "absent.pdf"},
+                ],
+                "direct": [
+                    {"pdf_path": "/x/good.pdf", "pdf_name": "good.pdf"},
+                ],
+            }
+        )
+    )
+    _seed_validation_yaml(root, "big", overall_pass=True, page_success_rate=1.0)
+    _seed_validation_yaml(root, "good", overall_pass=True, page_success_rate=1.0)
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc != 0
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    assert "postprocess.py" not in scripts_invoked
+    assert "final_delivery_check.py" not in scripts_invoked
+
+
+def test_quality_gate_reads_chunked_pdf_validation(root: Path, patch_popen):
+    """Aggregated <merged>.validation.yaml is consumed by the gate just like direct PDFs."""
+    (root / "input" / "huge.pdf").write_bytes(b"%PDF-fake")
+    mapping = root / "input" / "split_pdfs" / "split_mapping.json"
+    mapping.write_text(
+        json.dumps(
+            {
+                "chunks": [
+                    {"original_pdf": "huge.pdf", "chunk_idx": 1},
+                    {"original_pdf": "huge.pdf", "chunk_idx": 2},
+                ],
+                "direct": [],
+            }
+        )
+    )
+    # Aggregated validation produced by merge_document — overall_pass=False
+    _seed_validation_yaml(
+        root, "huge", overall_pass=False, page_success_rate=0.60, total_pages=20
+    )
+
+    pipeline = Pipeline.from_env(root)
+    rc = pipeline.run()
+
+    assert rc != 0
+    scripts_invoked = [Path(inv["cmd"][1]).name for inv in patch_popen.invocations]
+    assert "postprocess.py" not in scripts_invoked
+    assert "final_delivery_check.py" not in scripts_invoked
+
+
 def test_archive_and_reset_runs_admin_script(root: Path, patch_popen):
     """--restart with existing progress.json invokes archive_progress.py."""
     progress = root / "progress.json"

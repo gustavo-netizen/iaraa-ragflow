@@ -529,6 +529,28 @@ class Pipeline:
             print("⚠️  Nenhum .validation.yaml encontrado — skip")
             return 0
 
+        expected = _compute_expected_count(self.split_mapping_path)
+        if expected is not None and expected > len(validation_files):
+            present_stems = {
+                vf.stem[: -len(".validation")]
+                if vf.stem.endswith(".validation")
+                else vf.stem
+                for vf in validation_files
+            }
+            missing = self._missing_validation_names(present_stems)
+            print(
+                f"❌ {expected - len(validation_files)} PDFs sem .validation.yaml "
+                f"({len(validation_files)}/{expected} presentes):"
+            )
+            for name in sorted(missing):
+                print(f"  • {name}")
+            print()
+            print(
+                "Indica merge incompleto — Stage 1 não emitiu validation "
+                "para todos os PDFs chunked. Pipeline abortada."
+            )
+            return 1
+
         failed: List[Any] = []
         for vf in validation_files:
             try:
@@ -579,6 +601,27 @@ class Pipeline:
         print("  ./run.sh --retry-failed       # reprocessa apenas páginas falhadas")
         print("  ./run.sh --no-quality-gate    # ignora o gate e prossegue")
         return 1
+
+    def _missing_validation_names(self, present_stems: set) -> set:
+        """Names from split_mapping.json with no ``.validation.yaml`` on disk."""
+        if not self.split_mapping_path.exists():
+            return set()
+        try:
+            with open(self.split_mapping_path, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return set()
+        expected_stems: set = set()
+        for entry in mapping.get("chunks", []) or []:
+            if isinstance(entry, dict) and entry.get("original_pdf"):
+                expected_stems.add(Path(entry["original_pdf"]).stem)
+        for entry in mapping.get("direct", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("pdf_path") or entry.get("pdf_name")
+            if path:
+                expected_stems.add(Path(path).stem)
+        return expected_stems - present_stems
 
     def _step5_final_delivery_copy(self) -> int:
         """Replace the bash for-loop at run.sh:427-457 with a Python copy.

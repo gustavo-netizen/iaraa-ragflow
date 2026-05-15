@@ -15,6 +15,7 @@ import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
@@ -297,3 +298,181 @@ class Document:
         content = cls._adjust_md_image_references(content, offset)
         content = cls._adjust_md_yaml_references(content, offset)
         return content
+
+
+# Thresholds mirror docmind/pipeline.py:475-479. Keep in sync if MARCO ever moves.
+_KQI_YAML_INSERTION_MIN = 0.95
+_KQI_CONFIDENCE_MIN = 0.85
+_KQI_PAGE_SUCCESS_MIN = 0.95
+
+
+def aggregate_chunk_validations(
+    chunks_data: List[Any],
+    page_offsets: List[int],
+    *,
+    filename: Optional[str] = None,
+) -> dict:
+    """Combine per-chunk ``.validation.yaml`` dicts into one merged report.
+
+    Mirrors the schema emitted by ``docmind/pipeline.py:481-553`` so the same
+    consumers (``orchestrator._step4_5_quality_gate``,
+    ``MarcoChecker._run_strict``) can read the aggregated file without
+    branching on chunked vs direct PDFs.
+
+    KQI rates are weighted by each chunk's ``page_statistics.total_pages``;
+    ``failed_pages_detail`` and ``page_by_page_results`` get the chunk's
+    ``page_offset`` added to their ``page`` field.
+    """
+    if len(chunks_data) != len(page_offsets):
+        raise ValueError(
+            f"chunks_data ({len(chunks_data)}) and page_offsets "
+            f"({len(page_offsets)}) must have equal length"
+        )
+
+    total_pages = 0
+    successful_pages = 0
+    failed_pages = 0
+    skipped_pages = 0
+    weighted_yir = 0.0
+    weighted_conf = 0.0
+    weight_sum = 0
+
+    total_figures = 0
+    total_tables = 0
+    total_formulas = 0
+    pages_with_figures = 0
+    pages_with_tables = 0
+    pages_with_formulas = 0
+    high_conf_figures = 0
+    medium_conf_figures = 0
+    low_conf_figures = 0
+
+    failed_pages_detail: List[dict] = []
+    page_by_page_results: List[dict] = []
+
+    quality_all_yaml = True
+    quality_zero_halluc = True
+    quality_proper_md = True
+    quality_complete = True
+
+    for chunk_data, offset in zip(chunks_data, page_offsets):
+        stats = chunk_data.get("page_statistics", {}) or {}
+        kqi = chunk_data.get("kqi_metrics", {}) or {}
+        vm = chunk_data.get("validation_metrics", {}) or {}
+        qi = chunk_data.get("quality_indicators", {}) or {}
+
+        chunk_total = int(stats.get("total_pages", 0) or 0)
+        total_pages += chunk_total
+        successful_pages += int(stats.get("successful_pages", 0) or 0)
+        failed_pages += int(stats.get("failed_pages", 0) or 0)
+        skipped_pages += int(stats.get("skipped_pages", 0) or 0)
+
+        if chunk_total > 0:
+            weighted_yir += float(kqi.get("yaml_insertion_rate", 0) or 0) * chunk_total
+            weighted_conf += (
+                float(kqi.get("average_confidence", 0) or 0) * chunk_total
+            )
+            weight_sum += chunk_total
+
+        total_figures += int(vm.get("total_figures_detected", 0) or 0)
+        total_tables += int(vm.get("total_tables_detected", 0) or 0)
+        total_formulas += int(vm.get("total_formulas_detected", 0) or 0)
+        pages_with_figures += int(vm.get("pages_with_figures", 0) or 0)
+        pages_with_tables += int(vm.get("pages_with_tables", 0) or 0)
+        pages_with_formulas += int(vm.get("pages_with_formulas", 0) or 0)
+        high_conf_figures += int(vm.get("high_confidence_figures", 0) or 0)
+        medium_conf_figures += int(vm.get("medium_confidence_figures", 0) or 0)
+        low_conf_figures += int(vm.get("low_confidence_figures", 0) or 0)
+
+        for item in chunk_data.get("failed_pages_detail", []) or []:
+            if not isinstance(item, dict) or "page" not in item:
+                continue
+            try:
+                page_num = int(item["page"]) + offset
+            except (TypeError, ValueError):
+                continue
+            failed_pages_detail.append(
+                {"page": page_num, "error": str(item.get("error", "") or "")}
+            )
+
+        for item in chunk_data.get("page_by_page_results", []) or []:
+            if not isinstance(item, dict) or "page" not in item:
+                continue
+            try:
+                page_num = int(item["page"]) + offset
+            except (TypeError, ValueError):
+                continue
+            page_by_page_results.append(
+                {
+                    "page": page_num,
+                    "success": bool(item.get("success", False)),
+                    "figure_count": int(item.get("figure_count", 0) or 0),
+                    "table_count": int(item.get("table_count", 0) or 0),
+                    "formula_count": int(item.get("formula_count", 0) or 0),
+                    "figures": item.get("figures", []) or [],
+                }
+            )
+
+        quality_all_yaml = quality_all_yaml and bool(qi.get("all_figures_have_yaml", True))
+        quality_zero_halluc = quality_zero_halluc and bool(qi.get("zero_hallucination", True))
+        quality_proper_md = quality_proper_md and bool(qi.get("proper_markdown_format", True))
+        quality_complete = quality_complete and bool(qi.get("complete_data_extraction", True))
+
+    yir = weighted_yir / weight_sum if weight_sum else 0.0
+    avg_conf = weighted_conf / weight_sum if weight_sum else 0.0
+    psr = successful_pages / total_pages if total_pages else 0.0
+
+    kqi_yaml_insertion = yir >= _KQI_YAML_INSERTION_MIN
+    kqi_confidence = avg_conf >= _KQI_CONFIDENCE_MIN
+    overall_pass = kqi_yaml_insertion and kqi_confidence and psr >= _KQI_PAGE_SUCCESS_MIN
+
+    figure_detection = (
+        round(total_figures / total_pages, 2) if total_pages else 0.0
+    )
+
+    return {
+        "document_info": {
+            "filename": filename or "",
+            "total_pages": total_pages,
+            "processed_pages": total_pages,
+            "processing_date": datetime.now().isoformat(),
+        },
+        "kqi_metrics": {
+            "yaml_insertion_rate": round(yir, 4),
+            "yaml_insertion_pass": kqi_yaml_insertion,
+            "average_confidence": round(avg_conf, 4),
+            "confidence_pass": kqi_confidence,
+            "page_success_rate": round(psr, 4),
+            "overall_quality_pass": overall_pass,
+        },
+        "validation_metrics": {
+            "yaml_insertion_rate": round(yir, 2),
+            "average_confidence": round(avg_conf, 2),
+            "figure_detection_completeness": figure_detection,
+            "total_figures_detected": total_figures,
+            "total_tables_detected": total_tables,
+            "total_formulas_detected": total_formulas,
+            "pages_with_figures": pages_with_figures,
+            "pages_with_tables": pages_with_tables,
+            "pages_with_formulas": pages_with_formulas,
+            "high_confidence_figures": high_conf_figures,
+            "medium_confidence_figures": medium_conf_figures,
+            "low_confidence_figures": low_conf_figures,
+        },
+        "page_statistics": {
+            "total_pages": total_pages,
+            "successful_pages": successful_pages,
+            "failed_pages": failed_pages,
+            "skipped_pages": skipped_pages,
+            "success_rate": round(psr, 4),
+        },
+        "quality_indicators": {
+            "all_figures_have_yaml": quality_all_yaml,
+            "zero_hallucination": quality_zero_halluc,
+            "proper_markdown_format": quality_proper_md,
+            "complete_data_extraction": quality_complete and avg_conf >= 0.6,
+            "no_page_failures": failed_pages == 0,
+        },
+        "failed_pages_detail": failed_pages_detail,
+        "page_by_page_results": page_by_page_results,
+    }
