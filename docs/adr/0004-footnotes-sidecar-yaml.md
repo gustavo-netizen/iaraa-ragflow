@@ -24,7 +24,7 @@ Stage 2 limpa **mal** por dois bugs combinados em `processamento/shared/ocr_patt
 
 J.0 corrigiu o legado. Resta a pergunta arquitetural: **onde devem morar os footnotes para novos PDFs processados?**
 
-Estado atual: 4 livros de smoke (`conversao/ragflow-ready/`) + ~96 livros legacy em produção. **Não vamos reprocessar** os 96 — J.0 cobre. Forward, queremos:
+Estado atual: 4 livros de smoke (`conversao/ragflow-ready/`) + livros legacy em produção. **Não vamos reprocessar** o legado — J.0 cobre. Forward, queremos:
 
 - Body MD sem nenhum ruído de footnote (label + items).
 - Footnotes preservados em formato estruturado, paralelo ao `_all_figures.yaml` que já existe.

@@ -17,7 +17,7 @@ return FileLock(self.lock_file, timeout=10)
 
 A proposta de refatoração original sugeria migrar para SQLite, citando "concurrent writes" e "consultas estruturadas" como motivações. A questão é: **vale o custo da migração?**
 
-Em produção: ~96 livros e centenas de fichas processados sem incidente atribuído ao storage. Não há gargalo medido — a queixa é teórica ("JSON não escala"), não empírica.
+Em produção: lotes de livros e fichas processados sem incidente atribuído ao storage. Não há gargalo medido — a queixa é teórica ("JSON não escala"), não empírica.
 
 ## Decisão
 

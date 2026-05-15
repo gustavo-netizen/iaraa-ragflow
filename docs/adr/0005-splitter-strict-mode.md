@@ -19,7 +19,7 @@ Quatro componentes contribuíram:
 | c | `split_large_pdfs_smart.py:90,251` | `main()` sem `return`; `sys.exit(main())` exits **0** |
 | d | `orchestrator.py:355` | `rc \|= self._step1_split(opts)` — bitwise OR sem curto-circuito |
 
-A consequência operacional é grave em produção: a maioria dos ~96 livros (H.1) é grande o suficiente para precisar de split. Um PDF malformado entre eles desapareceria silenciosamente até alguém auditar manualmente a entrega.
+A consequência operacional é grave em produção: a maioria dos livros é grande o suficiente para precisar de split. Um PDF malformado entre eles desapareceria silenciosamente até alguém auditar manualmente a entrega.
 
 A política inversa — **abortar cedo em qualquer erro** — força o operador a reparar (com `pikepdf`, ver ADR-0006) ou remover o arquivo antes de reentregar API keys e horas de processamento.
 

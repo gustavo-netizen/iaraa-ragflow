@@ -12,7 +12,7 @@
 A run completa de hoje (10 PDFs, 1 API key, ~104 min Stage 1) expôs três falhas latentes da arquitetura pós-Fase J:
 
 1. **`Dissertação_Carvalho.pdf` foi descartado silenciosamente** no Step 1 (PDF malformado) sem qualquer alerta downstream — só descoberto inspecionando o relatório final.
-2. **O KQI Quality Gate (Step 4.5) só validou os 3 PDFs diretos**, ignorando os 6 chunked (justamente os maiores e mais sujeitos a falhas). Em produção (H.1, ~96 books), o gate efetivamente nunca rodou.
+2. **O KQI Quality Gate (Step 4.5) só validou os 3 PDFs diretos**, ignorando os 6 chunked (justamente os maiores e mais sujeitos a falhas). Em produção (PDFs grandes em sua maioria), o gate efetivamente nunca rodou.
 3. Reparei o PDF rejeitado manualmente com `pikepdf` (libqpdf bindings) em segundos — sugere robustez parser-side em Python puro insuficiente.
 
 A suite atual (`pytest tests/`, 202 passed, 0 xfail) **não cobre** nenhuma das três falhas. Os ADRs locked (0001–0004) não são tocados.
@@ -38,7 +38,7 @@ A suite atual (`pytest tests/`, 202 passed, 0 xfail) **não cobre** nenhuma das 
 
 **Impacto:**
 - Observado: 1/10 PDFs perdido sem alarme
-- Produção (H.1 — 96 books, em sua maioria chunked): perda silenciosa não-detectada em qualquer PDF malformado
+- Produção (lotes grandes, majoritariamente chunked): perda silenciosa não-detectada em qualquer PDF malformado
 - Reruns: chunks parciais podem ser reusados como cache e perpetuar dados truncados
 
 ### Solução
@@ -129,7 +129,7 @@ Reusa fixtures do Bug 1 em `tests/test_split_large_pdfs.py`:
 
 **Impacto:**
 - Observado: 6/9 PDFs entregues sem KQI check
-- Produção H.1 (96 books): a maioria é chunked → gate efetivamente nunca rodou para nenhum
+- Produção: a maioria dos PDFs é chunked → gate efetivamente nunca rodou para nenhum desses
 - Risco silencioso de qualidade em PDFs grandes, que são justamente os mais sujeitos a throttling/falhas
 
 ### Solução
@@ -275,8 +275,7 @@ Fase 3 (Bug 2) ─┘
 Identificadas durante a investigação mas **não tratadas aqui** — viram follow-up separado:
 
 1. **Rubric `medium`-only do modelo** (Qwen-VL): todas as figuras vêm com `confidence: medium` (mapeia 0.60). Threshold KQI 0.85 é matematicamente inatingível com o prompt atual. Opções: ajustar threshold para 0.60, recalibrar rubric (mapping `medium→0.85`), ou refinar prompt do `qwen-vl-max` para emitir `high` quando aplicável. **Decisão de produto, não de bugfix.**
-2. **H.1 chapter-title fix em produção** (mencionado no `CLAUDE.md` raiz): re-processing dos ~96 books continua sendo decisão de produto, mas agora com KQI gate funcional pós-Fase 1 a re-execução é segura.
-3. **Schema de `split_mapping.json`** (H4 da investigação): só precisa doc na Fase 4, não é bug.
+2. **Schema de `split_mapping.json`** (H4 da investigação): só precisa doc na Fase 4, não é bug.
 
 ---
 
@@ -314,4 +313,3 @@ Identificadas durante a investigação mas **não tratadas aqui** — viram foll
    - (a) reduzir `confidence_min` para 0.60 em `MarcoChecker` + `_step4_5_quality_gate`
    - (b) recalibrar mapping rubric (`medium → 0.85`) no parser de figuras
    - (c) refinar prompt do `qwen-vl-max` para emitir `high` quando aplicável
-2. **H.1 chapter-title fix em produção** (re-processing dos ~96 books): agora seguro com KQI gate funcional, mas continua sendo decisão de produto.

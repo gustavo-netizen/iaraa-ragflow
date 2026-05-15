@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Pipeline em duas etapas (`conversao/` → `processamento/`) que converte PDFs agrícolas brasileiros (Fichas Agroecológicas + Livros Técnicos) em Markdown otimizado para RAGFlow. Em produção: ~96 livros e centenas de fichas processados. **Sem testes.**
+Pipeline em duas etapas (`conversao/` → `processamento/`) que converte PDFs agrícolas brasileiros (Fichas Agroecológicas + Livros Técnicos) em Markdown otimizado para RAGFlow. Em produção: lotes de livros e fichas já processados. **Sem testes.**
 
 A revisão arquitetural identificou três grupos de fricção, todos verificados em código:
 
@@ -66,7 +66,7 @@ tests/
 
 **Critério:** após cada fase B–G, `pytest tests/test_snapshot.py` passa. Mudanças intencionais atualizam o golden em commit separado com justificativa.
 
-**Bug observado em produção (capturado no golden, NÃO corrigido aqui — ver Fase H):** `book_converter/llm_pipeline.py:_clean_chapter_title_text` tem patterns em ordem errada — o pattern genérico `[IVXLC]+` casa **antes** dos específicos `CAPÍTULO`/`PARTE`, dropando a primeira letra de capítulos que começam com I/V/X/L/C. No golden: `## APÍTULO 1 - INTRODUÇÃO` em vez de `## INTRODUÇÃO`. Afeta os ~96 livros em produção com chapters em CAPÍTULO/INTRODUÇÃO/CONCLUSÃO etc.
+**Bug observado em produção (capturado no golden, NÃO corrigido aqui — ver Fase H):** `book_converter/llm_pipeline.py:_clean_chapter_title_text` tem patterns em ordem errada — o pattern genérico `[IVXLC]+` casa **antes** dos específicos `CAPÍTULO`/`PARTE`, dropando a primeira letra de capítulos que começam com I/V/X/L/C. No golden: `## APÍTULO 1 - INTRODUÇÃO` em vez de `## INTRODUÇÃO`. Afeta livros em produção com chapters em CAPÍTULO/INTRODUÇÃO/CONCLUSÃO etc.
 
 #### 0.2 ADRs + CONTEXT.md ✅ (concluído 2026-05-04)
 
@@ -419,8 +419,6 @@ Bug capturado nos goldens em Fase 0.1: patterns rodavam em ordem; `r'^([IVXLC]+.
 
 Goldens re-baselined; diff isolado em 2 linhas (`## APÍTULO N - X` → `## X`).
 
-**Re-processar produção:** os ~96 livros em `Livros_Processados/` precisam ser re-rodados via `/convert-book` pra corrigir titles existentes. Fora do escopo do refator (decisão de produto).
-
 #### H.2 `Document._adjust_md_yaml_references` ✅ — `6fba57f`
 
 Bug capturado em xfail durante Fase E. Quando o mesmo path YAML aparecia 2× numa linha em formato Markdown link `[path](path)` (formato emitido por `assembler.py`), regex gulosa só renumerava a URL — link-text ficava com número antigo.
@@ -435,7 +433,7 @@ Test renomeado de `..._known_buggy` → `test_apply_page_offset_yaml_refs_in_mar
 
 ### Fase J — Footnotes em sidecar YAML ✅ (concluído 2026-05-07)
 
-**Resultado:** Stage 1 deixa de inlinar footnotes no body MD e passa a emitir `<name>.footnotes.yaml` paralelo ao `_all_figures.yaml`. Body MD pós-J.2 fica 100% livre de ruído de footnote; book_converter ganha flag `inline_notes` opcional. Cleanup de J.0 cobre os ~96 livros legacy sem reprocessar Stage 1. Suite 194 passed (155 baseline + 39 das fases J).
+**Resultado:** Stage 1 deixa de inlinar footnotes no body MD e passa a emitir `<name>.footnotes.yaml` paralelo ao `_all_figures.yaml`. Body MD pós-J.2 fica 100% livre de ruído de footnote; book_converter ganha flag `inline_notes` opcional. Cleanup de J.0 cobre o legado sem reprocessar Stage 1. Suite 194 passed (155 baseline + 39 das fases J).
 
 #### J.0 — Backward-compat cleanup ✅ — `ebd93ab`
 

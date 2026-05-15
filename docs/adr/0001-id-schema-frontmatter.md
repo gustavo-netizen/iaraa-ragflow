@@ -79,7 +79,7 @@ A divergência também esconde uma decisão de modelagem: o tipo do documento (f
 - `processamento/shared/yaml_writer.py` ganha uma única fonte de verdade.
 
 **Negativas / custos**
-- **IDs mudam para documentos já produzidos.** ~96 livros e centenas de fichas em produção têm IDs no formato antigo. Os arquivos não são re-processados automaticamente; novos runs gerarão IDs novos. Se o RAGFlow já indexou IDs antigos, há risco de duplicação na re-ingestão.
+- **IDs mudam para documentos já produzidos.** Documentos em produção têm IDs no formato antigo. Os arquivos não são re-processados automaticamente; novos runs gerarão IDs novos. Se o RAGFlow já indexou IDs antigos, há risco de duplicação na re-ingestão.
 - A mitigação é **não migrar retroativamente**: documentos antigos mantêm seus IDs até serem re-processados explicitamente. Re-ingestão no RAGFlow deve limpar a coleção antes.
 - `tipo` adiciona uma linha ao YAML de cada documento. Custo desprezível.
 
