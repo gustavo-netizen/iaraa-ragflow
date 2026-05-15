@@ -8,7 +8,8 @@ import os
 import sys
 import json
 from pathlib import Path
-from PyPDF2 import PdfReader, PdfWriter
+
+import pikepdf
 
 # 导入进度管理器
 try:
@@ -19,90 +20,90 @@ except ImportError:
     PROGRESS_ENABLED = False
 
 def split_pdf(pdf_path, output_dir, max_pages_per_chunk=50, max_size_mb_per_chunk=50):
-    """Split a PDF into chunks based on pages AND file size"""
+    """Split a PDF into chunks based on pages AND file size.
+
+    Uses pikepdf (libqpdf C bindings) instead of PyPDF2 — recovers from minor
+    cross-ref damage that the pure-Python parser rejects (PLANO_BUGFIXES Bug 2).
+    Output files are written as ``<chunk>.pdf.tmp`` and renamed to ``.pdf``
+    only after ``Pdf.save`` returns, so a failure mid-loop never leaves
+    partial chunks for reruns to pick up.
+    """
     pdf_path = Path(pdf_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    reader = PdfReader(pdf_path)
-    total_pages = len(reader.pages)
-    file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
-    mb_per_page = file_size_mb / total_pages if total_pages > 0 else 0
+    with pikepdf.open(pdf_path) as reader:
+        total_pages = len(reader.pages)
+        file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        mb_per_page = file_size_mb / total_pages if total_pages > 0 else 0
 
-    print(f"\n  📄 {pdf_path.name}")
-    print(f"      Pages: {total_pages}, Size: {file_size_mb:.1f}M, Density: {mb_per_page:.2f}M/page")
+        print(f"\n  📄 {pdf_path.name}")
+        print(f"      Pages: {total_pages}, Size: {file_size_mb:.1f}M, Density: {mb_per_page:.2f}M/page")
 
-    # Calculate chunks needed based on pages
-    chunks_by_pages = (total_pages + max_pages_per_chunk - 1) // max_pages_per_chunk
+        # Calculate chunks needed based on pages
+        chunks_by_pages = (total_pages + max_pages_per_chunk - 1) // max_pages_per_chunk
 
-    # Calculate chunks needed based on file size
-    chunks_by_size = int((file_size_mb + max_size_mb_per_chunk - 1) / max_size_mb_per_chunk)
+        # Calculate chunks needed based on file size
+        chunks_by_size = int((file_size_mb + max_size_mb_per_chunk - 1) / max_size_mb_per_chunk)
 
-    # Take the more restrictive limit (more chunks = smaller chunks)
-    num_chunks = max(chunks_by_pages, chunks_by_size)
+        # Take the more restrictive limit (more chunks = smaller chunks)
+        num_chunks = max(chunks_by_pages, chunks_by_size)
 
-    if num_chunks <= 1:
-        print(f"      ⏭️  No split needed")
-        return []
+        if num_chunks <= 1:
+            print(f"      ⏭️  No split needed")
+            return []
 
-    # Calculate pages per chunk
-    pages_per_chunk = (total_pages + num_chunks - 1) // num_chunks
-    size_per_chunk = file_size_mb / num_chunks
+        # Calculate pages per chunk
+        pages_per_chunk = (total_pages + num_chunks - 1) // num_chunks
+        size_per_chunk = file_size_mb / num_chunks
 
-    print(f"      ✂️  Splitting into {num_chunks} chunks")
-    print(f"         Strategy: {chunks_by_pages} by pages, {chunks_by_size} by size → using {num_chunks}")
-    print(f"         Each chunk: ~{pages_per_chunk} pages, ~{size_per_chunk:.1f}M")
+        print(f"      ✂️  Splitting into {num_chunks} chunks")
+        print(f"         Strategy: {chunks_by_pages} by pages, {chunks_by_size} by size → using {num_chunks}")
+        print(f"         Each chunk: ~{pages_per_chunk} pages, ~{size_per_chunk:.1f}M")
 
-    chunks = []
-    # Write to *.pdf.tmp and rename to *.pdf only after writer.write() returns.
-    # If split fails midway, all unrenamed .tmp files are unlinked so reruns
-    # don't pick up partial chunks. Final .pdf files from earlier iterations
-    # are left in place — the caller decides whether to keep or restart.
-    tmp_paths = []
-    try:
-        for chunk_idx in range(num_chunks):
-            start_page = chunk_idx * pages_per_chunk
-            end_page = min((chunk_idx + 1) * pages_per_chunk, total_pages)
+        chunks = []
+        tmp_paths = []
+        try:
+            for chunk_idx in range(num_chunks):
+                start_page = chunk_idx * pages_per_chunk
+                end_page = min((chunk_idx + 1) * pages_per_chunk, total_pages)
 
-            # Create output filename
-            base_name = pdf_path.stem
-            chunk_name = f"{base_name}_part{chunk_idx+1}of{num_chunks}.pdf"
-            chunk_path = output_dir / chunk_name
-            tmp_path = Path(str(chunk_path) + ".tmp")
-            tmp_paths.append(tmp_path)
+                # Create output filename
+                base_name = pdf_path.stem
+                chunk_name = f"{base_name}_part{chunk_idx+1}of{num_chunks}.pdf"
+                chunk_path = output_dir / chunk_name
+                tmp_path = Path(str(chunk_path) + ".tmp")
+                tmp_paths.append(tmp_path)
 
-            # Create chunk PDF
-            writer = PdfWriter()
-            for page_num in range(start_page, end_page):
-                writer.add_page(reader.pages[page_num])
+                # Create chunk PDF
+                with pikepdf.Pdf.new() as new_pdf:
+                    new_pdf.pages.extend(reader.pages[start_page:end_page])
+                    new_pdf.save(tmp_path)
+                tmp_path.replace(chunk_path)
 
-            with open(tmp_path, 'wb') as f:
-                writer.write(f)
-            tmp_path.replace(chunk_path)
+                chunk_size = chunk_path.stat().st_size / (1024 * 1024)
+                chunks.append({
+                    'path': str(chunk_path),
+                    'chunk_idx': chunk_idx + 1,
+                    'total_chunks': num_chunks,
+                    'start_page': start_page + 1,  # 1-indexed
+                    'end_page': end_page,
+                    'pages': end_page - start_page,
+                    'size_mb': round(chunk_size, 1),
+                    'original_pdf': str(pdf_path)
+                })
 
-            chunk_size = chunk_path.stat().st_size / (1024 * 1024)
-            chunks.append({
-                'path': str(chunk_path),
-                'chunk_idx': chunk_idx + 1,
-                'total_chunks': num_chunks,
-                'start_page': start_page + 1,  # 1-indexed
-                'end_page': end_page,
-                'pages': end_page - start_page,
-                'size_mb': round(chunk_size, 1),
-                'original_pdf': str(pdf_path)
-            })
+                print(f"         ✅ Chunk {chunk_idx+1}/{num_chunks}: pages {start_page+1}-{end_page} ({chunk_size:.1f}M)")
+        except Exception:
+            for tp in tmp_paths:
+                if tp.exists():
+                    try:
+                        tp.unlink()
+                    except OSError:
+                        pass
+            raise
 
-            print(f"         ✅ Chunk {chunk_idx+1}/{num_chunks}: pages {start_page+1}-{end_page} ({chunk_size:.1f}M)")
-    except Exception:
-        for tp in tmp_paths:
-            if tp.exists():
-                try:
-                    tp.unlink()
-                except OSError:
-                    pass
-        raise
-
-    return chunks
+        return chunks
 
 def main():
     import argparse
@@ -181,8 +182,8 @@ def main():
 
     for pdf_file in pdf_files:
         try:
-            reader = PdfReader(pdf_file)
-            total_pages = len(reader.pages)
+            with pikepdf.open(pdf_file) as reader:
+                total_pages = len(reader.pages)
             file_size_mb = pdf_file.stat().st_size / (1024 * 1024)
 
             # 检查页数阈值或文件大小阈值（任一超过即需分割）

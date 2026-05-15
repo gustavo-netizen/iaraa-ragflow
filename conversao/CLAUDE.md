@@ -8,6 +8,13 @@ DocMind is **Stage 1** of the iaraa-ragflow pipeline. It converts PDFs to Markdo
 
 After Fase G, the pipeline is orchestrated in Python (`conversao/orchestrator.py`). `run.sh` is a thin wrapper (~207 lines) that loads API keys, spawns the monitor daemon, handles `--history`/`--no-quality-gate`, then delegates to `python orchestrator.py run [...]`. Operators see no behavior change; the CLI surface is preserved.
 
+## System Dependencies
+
+Two C libraries are required alongside the Python packages in `requirements.txt`:
+
+- **poppler** — consumed by `pdf2image` (PDF → PNG rasterization). `brew install poppler` (macOS) / `apt install poppler-utils` (Linux).
+- **libqpdf** — consumed by `pikepdf` (PDF splitting in `scripts/split_large_pdfs_smart.py`). `brew install qpdf` (macOS) / `apt install libqpdf-dev` (Linux). pikepdf replaced PyPDF2 in Fase 3 of `PLANO_BUGFIXES_QUALITY_GATE.md` because libqpdf's C parser silently recovers from minor PDF damage (truncated trailers, off-spec headers) that PyPDF2's pure-Python parser rejects.
+
 ## Essential Commands
 
 ```bash
